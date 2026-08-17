@@ -1,0 +1,71 @@
+This is the part that actually determines whether the project works or not, so let's go deep. I'll cover four things: exactly how a dog gets matched, exactly how and where data is stored, which models/losses to actually use, and where real training data comes from — including datasets that already exist for this exact problem.
+
+## 1. How "rectifying" the dog actually works
+
+There are two fundamentally different problems here, and mixing them up is the most common mistake in this kind of system:
+
+- **Verification (1:1):** "Is this photo the same dog as this specific profile?" — easy, high accuracy.
+- **Identification (1:N, open-set):** "Which dog in our entire database — if any — is this?" — this is what PawFriend actually needs, and it's harder, because the correct answer might be "none of them, this dog isn't registered at all."
+
+The runtime flow for identification looks like this:**At scan time:**
+1. New photo comes in → detection + quality gate (from the earlier plan) → embedding vector generated (say, 512 numbers).
+2. That vector is compared against **every stored embedding** using cosine similarity (or Euclidean distance) — this produces a similarity score between 0 and 1 for each dog in the database.
+3. Sort by score, take the top few candidates.
+4. **Threshold decision:** if the best score clears a chosen cutoff (say 0.85), it's shown as a likely match. If nothing clears the threshold, the system reports "no match — possibly unregistered."
+5. **Human confirmation, always.** The match is shown to a PawFriend staff member with the candidate photo side-by-side, not auto-resolved. They confirm before any owner contact info is released. This isn't optional — it's your main defense against both false positives (privacy risk: revealing the wrong owner's number) and the system's real-world accuracy being lower than lab numbers.
+
+The threshold itself isn't guessed — it's tuned using an ROC curve (explained in the accuracy section below), because there's a direct trade-off: a loose threshold catches more real matches but also produces more false matches; a strict threshold does the opposite.
+
+## 2. How the data is actually stored
+
+Three separate stores, each holding a different kind of thing — don't mix them:
+
+**PostgreSQL — structured records**
+```
+owners        (id, name, phone, email, address, consent_given_at)
+dogs          (id, owner_id, name, breed, color, sex, approx_dob,
+               microchip_id [optional], status [registered/lost/found], created_at)
+nose_prints   (id, dog_id, embedding vector(512),  -- pgvector column
+               image_url, quality_score, captured_at, is_primary)
+```
+A few deliberate choices here:
+- **Store multiple embeddings per dog, not just one.** Nose print matching is sensitive to angle and lighting, so keep 3–5 embeddings per dog (from different registration photos) and match against all of them, taking the best score. This meaningfully improves real-world recall over relying on a single "canonical" embedding.
+- **Never store raw image files in the database.** Photos go to object storage (S3-compatible); Postgres only holds the URL/path. The embedding vector is the only biometric data that lives in the hot-path database, and it's a one-way derived representation — not reversible into a photo, unlike the photo itself.
+- Once you have more than a few thousand embeddings, add a `pgvector` approximate-nearest-neighbor index (HNSW or IVFFlat) so similarity search stays fast — brute-force cosine comparison against every row works fine at hundreds of dogs but won't scale past that.
+
+**Object storage — the actual photos**, referenced by URL from the `nose_prints` table.
+
+**Compliance note, since this is India-based:** owner phone numbers, addresses, and pet photos count as personal data under India's Digital Personal Data Protection Act (DPDP Act, 2023). Get explicit consent at registration, store only what you need, and be able to delete a person's data on request. This is worth building in from day one rather than retrofitting later.
+
+## 3. Which models to actually use, and why
+
+**Step 1 — nose detector.** Fine-tune YOLOv8-nano on a nose-bounding-box dataset. This step doesn't need per-dog identity labels, just "here's where the nose is," so you can bootstrap it cheaply — Kaggle has ready-made annotated sets for exactly this ("Dog nose detection for YOLOv8," and a plain "dog-nose-detection-yolo" set), plus a smaller 361-image annotated set on images.cv. This is a solved, low-risk part of the pipeline.
+
+**Step 2 — the embedding/recognition model.** This is the hard part, and here's what's actually been proven to work in the published research on this exact task:
+- **Backbone:** ResNet50, pretrained on ImageNet, fine-tuned. This is what the original 2021 Yonsei paper used, and it remains a strong, well-supported choice with lots of tooling. A lighter MobileNetV3/EfficientNet-lite backbone is worth considering later if you need faster on-device inference, but start with ResNet50 for accuracy while you're still validating the approach.
+- **Loss function:** don't rely on plain triplet loss alone. The strongest published results on this exact task (the CVPR 2022 Pet Biometric Challenge, run on a dataset from Ant Group) came from combining **cross-entropy + triplet loss + pairwise circle loss** during training, with heavy offline data augmentation to compensate for having only a few images per dog — which is exactly the situation PawFriend will start in. If that's more than you want to implement initially, a simpler and still solid starting point is **triplet loss alone**, or an **ArcFace-style additive angular margin loss** (the current standard in human face recognition) — both are well documented and have off-the-shelf PyTorch implementations. Start simple, measure, then add complexity only if the accuracy numbers demand it.
+- Realistic expectation: the actual CVPR 2022 challenge winners scored **86.67% AUC** on a genuinely blind test set — worth remembering next to the ~98–99% figures companies advertise, which come from friendlier, curated conditions. Calibrate your own targets and your write-up accordingly.
+
+## 4. Where the training data actually comes from
+
+This is the question that usually kills projects like this, so here's a concrete list rather than a vague "collect data":
+
+| Source | Size | Good for | Access |
+|---|---|---|---|
+| CVPR 2022 Pet Biometric Challenge (Ant Group) | ~6,000 dogs, 20,000 nose-print images + labeled pos/neg pairs | Pretraining the embedding model | Originally released for the competition; check current availability with the workshop organizers — several papers note the original download is no longer live, but the winning teams' training code is public on GitHub (`muzishen/Pet-ReID-IMAG`, `wkrcarry/Pet_Biometric_Challenge`), which is valuable even without their exact data |
+| Nexdata commercial dataset | 64,378 images, 1,073 dogs, indoor/outdoor, multiple breeds, segmentation-annotated | A serious pretraining set if there's ever budget for it | Paid (nexdata.ai); a small free sample subset exists on Kaggle/GitHub for prototyping only |
+| Kaggle nose-detection sets | Few hundred bounding-box-annotated images | Training the Step 1 detector | Free |
+| images.cv dog nose set | 361 annotated images | Same — detector bootstrapping | Free |
+| PawFriend's own registrations | Grows over time | Fine-tuning the embedding model to real deployment conditions (Indian street dogs, phone cameras, real lighting) | Yours — and the most important one long-term |
+
+**The practical strategy:** pretrain or fine-tune your embedding model's early layers using a public dataset (Nexdata's free sample plus whatever training code you can get running from the CVPR challenge repos) to learn general "what does nose-print texture look like" features, then fine-tune the final layers specifically on PawFriend's own collected dogs. You are not training a nose-print recognizer from zero on a few hundred of your own photos — that would badly underperform. You're specializing an already-competent model to your specific population and conditions, which is realistic within an internship timeframe.
+
+## 5. How you actually measure and improve accuracy
+
+1. Build a validation set of **positive pairs** (two photos, same dog) and **negative pairs** (two photos, different dogs).
+2. Run every pair through the model, get a similarity score for each.
+3. Plot an **ROC curve** — this shows you, at every possible threshold, the trade-off between:
+   - **False Accept Rate (FAR):** wrongly saying two different dogs are the same one — the privacy risk (wrong owner contacted).
+   - **False Reject Rate (FRR):** wrongly saying the same dog is two different ones — the "system failed to find a real match" risk.
+4. Pick your production threshold deliberately based on which failure mode matters more to PawFriend — given the privacy angle discussed earlier, err toward a stricter threshold (lower FAR) and lean on the human-review step to recover missed matches, rather than the reverse.
+5. Report AUC (area under the ROC curve) as your headline accuracy number in your project write-up — it's the standard metric used in every paper cited above, so it's directly comparable to published results, and it's a more honest number than a single "accuracy %" that depends entirely on which threshold you happened to pick.
