@@ -9,10 +9,9 @@ from datetime import datetime, timezone
 import numpy as np
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 from app.config import settings
-from app.models.database import Dog, MatchLog, NosePrint, Owner
+from app.models.database import Dog, MatchLog, NosePrint
 from app.schemas import MatchCandidate, MatchResponse, QualityCheckResult
 
 import logging
@@ -63,11 +62,9 @@ async def find_matches(
             d.breed,
             d.color,
             d.status,
-            d.profile_photo_url,
-            o.name AS owner_name
+            d.profile_photo_url
         FROM nose_prints np
         JOIN dogs d ON np.dog_id = d.id
-        LEFT JOIN owners o ON d.owner_id = o.id
         ORDER BY np.embedding <=> :query_vec ASC
         LIMIT :top_k
     """)
@@ -97,7 +94,6 @@ async def find_matches(
                 similarity_score=round(float(row.similarity_score), 4),
                 matched_image_url=row.image_url,
                 profile_photo_url=row.profile_photo_url,
-                owner_name=row.owner_name,
                 status=row.status,
             )
         )
