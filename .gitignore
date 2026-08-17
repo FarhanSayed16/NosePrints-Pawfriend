@@ -1,0 +1,49 @@
+# NosePrints-Pawfriend — .gitignore
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+
+# ── Environment ──
+.env
+*.env.local
+
+# ── ML Models (large binary files) ──
+backend/models/*.onnx
+ml/data/
+ml/checkpoints/
+*.pt
+*.pth
+*.onnx
+
+# ── Uploads (local dev) ──
+uploads/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── Node ──
+node_modules/
+dist/
+.next/
+.cache/
+
+# ── Docker ──
+*.log
+
+# ── Jupyter ──
+.ipynb_checkpoints/

@@ -1,0 +1,27 @@
+# NosePrints-Pawfriend — Docker Compose
+# Runs PostgreSQL with pgvector extension for local development.
+# Usage: docker-compose up -d
+
+services:
+  # ── PostgreSQL + pgvector ──
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: noseprints-db
+    environment:
+      POSTGRES_USER: noseprints
+      POSTGRES_PASSWORD: noseprints
+      POSTGRES_DB: noseprints_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U noseprints -d noseprints_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+    driver: local
