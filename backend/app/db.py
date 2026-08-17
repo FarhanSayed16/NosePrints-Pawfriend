@@ -3,6 +3,7 @@ Async database session management using SQLAlchemy 2.0.
 Provides the async engine, session factory, and dependency injection.
 """
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from app.config import settings
 
@@ -44,10 +45,15 @@ async def init_db():
     Create all tables on startup (dev only).
     In production, use Alembic migrations instead.
     """
-    from app.models.database import Base
+    from app.models.database import Base  # noqa: F401 — registers all tables
 
     async with engine.begin() as conn:
-        # Enable pgvector extension
-        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        # Create all tables
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # Additive column for existing local DBs created before Phase 0
+        await conn.execute(
+            text(
+                "ALTER TABLE owners "
+                "ADD COLUMN IF NOT EXISTS consent_text_version VARCHAR(32) NOT NULL DEFAULT 'v1'"
+            )
+        )

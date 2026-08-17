@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     NOSE_DETECTOR_MODEL_PATH: str = "models/nose_detector.onnx"
     EMBEDDING_MODEL_PATH: str = "models/embedding_model.onnx"
     EMBEDDING_DIMENSION: int = 512
+    DETECTOR_CONF_THRESHOLD: float = 0.35
+    DETECTOR_RETRY_CONF_THRESHOLD: float = 0.20
+    DETECTOR_CLOSEUP_PAD: float = 0.30
 
     # ── Matching ──
     MATCH_THRESHOLD: float = 0.85  # Cosine similarity threshold — tuned via ROC curve
@@ -51,9 +54,16 @@ class Settings(BaseSettings):
     ]
 
     # ── JWT (for admin/staff auth) ──
-    JWT_SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION"
+    JWT_SECRET_KEY: str = "dev-only-not-for-production-change-me-32b"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_MINUTES: int = 60 * 24  # 24 hours
+
+    # ── Staff bootstrap (optional; only used if staff table is empty) ──
+    STAFF_BOOTSTRAP_EMAIL: Optional[str] = None
+    STAFF_BOOTSTRAP_PASSWORD: Optional[str] = None
+
+    # ── Consent ──
+    CONSENT_TEXT_VERSION: str = "v1"
 
     model_config = {
         "env_file": ".env",
