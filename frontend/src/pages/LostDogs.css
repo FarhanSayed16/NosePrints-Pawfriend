@@ -1,0 +1,79 @@
+/* Action Banner */
+.action-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  border: 1px solid rgba(253, 121, 168, 0.2) !important;
+  background: rgba(253, 121, 168, 0.05) !important;
+}
+
+.banner-content h3 {
+  margin-bottom: 0.25rem;
+}
+
+.banner-content p {
+  color: var(--clr-text-secondary);
+  font-size: 0.95rem;
+}
+
+/* Lost Grid */
+.lost-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.lost-card {
+  padding: 1.5rem !important;
+  border-left: 3px solid var(--clr-danger) !important;
+}
+
+.lost-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.lost-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgba(214, 48, 49, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lost-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lost-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.lost-detail {
+  font-size: 0.85rem;
+  color: var(--clr-text-secondary);
+}
+
+.lost-cta {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 1rem;
+}
+
+@media (max-width: 768px) {
+  .action-banner {
+    flex-direction: column;
+    text-align: center;
+  }
+}
