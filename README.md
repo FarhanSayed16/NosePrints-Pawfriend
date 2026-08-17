@@ -4,6 +4,44 @@
 
 Like human fingerprints, every dog's nose print is unique for life. NosePrints uses deep learning to register dogs by their nose print, reunite lost pets with owners, and identify found strays — all from a smartphone, no app install required.
 
+**v1 scope:** nose-print ID only. Retina/iris scanning is out. Native apps are later.
+
+**Plan & status:** [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md) (source of truth) · [`docs/task.md`](docs/task.md) (checklist).  
+**Continue from Phase 1** (nose detector). Phase 0 safety freeze is in the repo.
+
+### Staff login (Phase 0)
+Owner phone/email is staff-only. Create the first admin once, then log in:
+
+```bash
+# First staff user (only works on an empty staff table)
+curl -X POST http://localhost:8000/api/v1/auth/bootstrap \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"staff@pawfriend.in\",\"password\":\"choose-a-long-password\"}"
+
+# Later logins
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"staff@pawfriend.in\",\"password\":\"choose-a-long-password\"}"
+```
+
+Use the returned `access_token` as `Authorization: Bearer <token>` on `/api/v1/owners/` and `/api/v1/match/confirm`.
+
+When `DEBUG=false`, identify/upload return **503** until a real `embedding_model.onnx` is present. Do not use the example JWT secret in production.
+
+### Train the nose detector (Phase 1)
+Use **Python 3.12** (not 3.14 — PyTorch CUDA wheels are not ready there). Dataset path: `ml/data/detector/dog_nose_yolov8/`.
+
+```bash
+py -3.12 -m venv ml\.venv
+ml\.venv\Scripts\activate
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+pip install -r ml/requirements.txt
+cd ml/training
+python train_detector.py --epochs 40 --batch 8 --imgsz 640 --device 0
+```
+
+This writes `backend/models/nose_detector.onnx`. Restart the FastAPI server afterward. Upload/identify now **reject** photos if no nose is found.
+
 ---
 
 ## 🚀 Quick Start
