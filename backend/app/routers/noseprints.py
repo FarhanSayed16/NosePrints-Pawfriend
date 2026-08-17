@@ -13,11 +13,13 @@ from app.db import get_db
 from app.models.database import Dog, NosePrint
 from app.schemas import NosePrintResponse, QualityCheckResult
 from app.services import (
-    assess_image_quality,
     embedding_extractor,
     nose_detector,
     storage_service,
 )
+from app.services.capture_pipeline import prepare_nose_scan
+from app.services.ml_guard import require_embedding_model
+from app.services.quality import assess_crop_quality
 
 import logging
 
@@ -49,6 +51,8 @@ async def upload_nose_print(
     7. Upload original photo to object storage
     8. Store embedding + metadata in database
     """
+    require_embedding_model()
+
     # 1. Validate dog exists
     result = await db.execute(select(Dog).where(Dog.id == dog_id))
     dog = result.scalar_one_or_none()
@@ -75,33 +79,12 @@ async def upload_nose_print(
     if content_type not in ("image/jpeg", "image/png", "image/webp"):
         raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are supported")
 
-    # 4. Detect nose region
-    nose_image, bbox = nose_detector.detect(image_bytes)
+    # 4–5. Detect nose (reject misses) + quality on crop
+    scan = prepare_nose_scan(image_bytes)
 
-    # 5. Quality check
-    quality = assess_image_quality(
-        image_bytes,
-        nose_bbox=bbox,
-        frame_width=nose_image.shape[1] if bbox else None,
-        frame_height=nose_image.shape[0] if bbox else None,
-    )
-
-    if not quality.passed:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "Image quality check failed",
-                "issues": quality.issues,
-                "scores": {
-                    "sharpness": quality.sharpness_score,
-                    "brightness": quality.brightness_score,
-                    "nose_coverage": quality.nose_coverage,
-                },
-            },
-        )
-
-    # 6. Extract embedding
-    embedding = embedding_extractor.extract(nose_image)
+    # 6. Extract embedding from the cropped nose
+    embedding = embedding_extractor.extract(scan.crop)
+    quality = scan.quality
 
     # 7. Upload to object storage
     image_url = await storage_service.upload_image(
@@ -139,11 +122,24 @@ async def check_image_quality(
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    # Detect nose for bbox
-    _, bbox = nose_detector.detect(image_bytes)
+    if not nose_detector.is_loaded:
+        raise HTTPException(
+            status_code=503,
+            detail="Nose detector is not loaded. Train and place nose_detector.onnx.",
+        )
 
-    quality = assess_image_quality(image_bytes, nose_bbox=bbox)
-    return quality
+    detection = nose_detector.detect(image_bytes)
+    if detection.bbox is None or detection.crop is None:
+        return QualityCheckResult(
+            passed=False,
+            sharpness_score=0.0,
+            brightness_score=0.0,
+            nose_coverage=0.0,
+            issues=["No dog nose detected — move closer and align the nose in the circle"],
+        )
+
+    orig_h, orig_w = detection.original.shape[:2]
+    return assess_crop_quality(detection.crop, detection.bbox, orig_w, orig_h)
 
 
 @router.get("/{dog_id}", response_model=list[NosePrintResponse])

@@ -3,21 +3,21 @@ Matching API routes — identify dogs by nose print scan.
 The core identification flow: scan → match → human review.
 """
 
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.deps import get_current_staff
+from app.models.database import StaffUser
 from app.schemas import MatchConfirmation, MatchResponse
 from app.services import (
-    assess_image_quality,
     confirm_match,
     embedding_extractor,
     find_matches,
-    nose_detector,
     storage_service,
 )
+from app.services.capture_pipeline import prepare_nose_scan
+from app.services.ml_guard import require_embedding_model
 
 import logging
 
@@ -46,6 +46,8 @@ async def identify_dog(
     6. Run pgvector similarity search
     7. Return candidates (human confirmation required before contact reveal)
     """
+    require_embedding_model()
+
     # 1. Read image
     image_bytes = await file.read()
     if not image_bytes:
@@ -53,33 +55,9 @@ async def identify_dog(
 
     content_type = file.content_type or "image/jpeg"
 
-    # 2. Detect nose
-    nose_image, bbox = nose_detector.detect(image_bytes)
-
-    # 3. Quality check
-    quality = assess_image_quality(
-        image_bytes,
-        nose_bbox=bbox,
-        frame_width=nose_image.shape[1] if bbox else None,
-        frame_height=nose_image.shape[0] if bbox else None,
-    )
-
-    if not quality.passed:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "Image quality too low for reliable matching",
-                "issues": quality.issues,
-                "suggestions": [
-                    "Hold the phone steady and close to the dog's nose",
-                    "Ensure good lighting — avoid shadows on the nose",
-                    "The nose should fill most of the camera frame",
-                ],
-            },
-        )
-
-    # 4. Extract embedding
-    embedding = embedding_extractor.extract(nose_image)
+    scan = prepare_nose_scan(image_bytes)
+    embedding = embedding_extractor.extract(scan.crop)
+    quality = scan.quality
 
     # 5. Store query image (audit trail)
     query_image_url = await storage_service.upload_image(
@@ -109,19 +87,18 @@ async def identify_dog(
 async def confirm_match_result(
     data: MatchConfirmation,
     db: AsyncSession = Depends(get_db),
+    staff: StaffUser = Depends(get_current_staff),
 ):
     """
     Staff confirms or rejects a match.
     REQUIRED before any owner contact information is released.
-
-    This is the human-in-the-loop safety step — never auto-resolve matches.
     """
     try:
         result = await confirm_match(
             db=db,
             match_log_id=data.match_log_id,
             confirmed=data.confirmed,
-            confirmed_by=data.confirmed_by,
+            confirmed_by=staff.id,
         )
         return result
     except ValueError as e:

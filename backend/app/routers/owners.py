@@ -1,6 +1,7 @@
 """
 Owner API routes — CRUD for dog owners.
-Includes DPDP Act compliant data deletion.
+PII list/get/update/delete require staff JWT.
+Public create still requires explicit consent (prefer POST /register).
 """
 
 from datetime import datetime, timezone
@@ -10,8 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_db
-from app.models.database import Owner
+from app.deps import get_current_staff
+from app.models.database import Owner, StaffUser
 from app.schemas import OwnerCreate, OwnerResponse, OwnerUpdate
 
 router = APIRouter(prefix="/owners", tags=["Owners"])
@@ -19,13 +22,17 @@ router = APIRouter(prefix="/owners", tags=["Owners"])
 
 @router.post("/", response_model=OwnerResponse, status_code=status.HTTP_201_CREATED)
 async def create_owner(data: OwnerCreate, db: AsyncSession = Depends(get_db)):
-    """Register a new dog owner with DPDP Act consent timestamp."""
+    """
+    Register a new dog owner. Explicit consent is required.
+    Prefer POST /api/v1/register so owner + dog are created together.
+    """
     owner = Owner(
         name=data.name,
         phone=data.phone,
         email=data.email,
         address=data.address,
-        consent_given_at=datetime.now(timezone.utc),  # Consent recorded at creation
+        consent_given_at=datetime.now(timezone.utc),
+        consent_text_version=settings.CONSENT_TEXT_VERSION,
     )
     db.add(owner)
     await db.flush()
@@ -37,8 +44,9 @@ async def list_owners(
     page: int = 1,
     per_page: int = 20,
     db: AsyncSession = Depends(get_db),
+    _: StaffUser = Depends(get_current_staff),
 ):
-    """List all owners with pagination."""
+    """List all owners with pagination. Staff only — contains phone/email."""
     offset = (page - 1) * per_page
     result = await db.execute(
         select(Owner).offset(offset).limit(per_page).order_by(Owner.created_at.desc())
@@ -47,8 +55,12 @@ async def list_owners(
 
 
 @router.get("/{owner_id}", response_model=OwnerResponse)
-async def get_owner(owner_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Get a single owner by ID."""
+async def get_owner(
+    owner_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: StaffUser = Depends(get_current_staff),
+):
+    """Get a single owner by ID. Staff only."""
     result = await db.execute(select(Owner).where(Owner.id == owner_id))
     owner = result.scalar_one_or_none()
     if not owner:
@@ -61,8 +73,9 @@ async def update_owner(
     owner_id: UUID,
     data: OwnerUpdate,
     db: AsyncSession = Depends(get_db),
+    _: StaffUser = Depends(get_current_staff),
 ):
-    """Update owner information."""
+    """Update owner information. Staff only."""
     result = await db.execute(select(Owner).where(Owner.id == owner_id))
     owner = result.scalar_one_or_none()
     if not owner:
@@ -77,7 +90,11 @@ async def update_owner(
 
 
 @router.delete("/{owner_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_owner(owner_id: UUID, db: AsyncSession = Depends(get_db)):
+async def delete_owner(
+    owner_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: StaffUser = Depends(get_current_staff),
+):
     """
     Delete owner and all associated data.
     DPDP Act compliance: supports full data erasure on request.
