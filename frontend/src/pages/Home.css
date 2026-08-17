@@ -1,0 +1,228 @@
+.home-page {
+  padding: 0;
+}
+
+/* ── Hero ── */
+.hero {
+  min-height: 85vh;
+  display: flex;
+  align-items: center;
+  padding: 4rem 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero .container {
+  display: flex;
+  align-items: center;
+  gap: 4rem;
+}
+
+.hero-content {
+  flex: 1;
+}
+
+.hero-badge {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--clr-primary-light);
+  background: rgba(108, 92, 231, 0.12);
+  border: 1px solid rgba(108, 92, 231, 0.25);
+  border-radius: var(--radius-xl);
+  margin-bottom: 1.5rem;
+}
+
+.hero-subtitle {
+  font-size: 1.15rem;
+  color: var(--clr-text-secondary);
+  max-width: 560px;
+  margin-top: 1rem;
+  line-height: 1.7;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.hero-visual {
+  flex: 0.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.hero-nose-icon {
+  font-size: 10rem;
+  animation: float 4s ease-in-out infinite;
+  filter: drop-shadow(0 20px 40px rgba(108, 92, 231, 0.3));
+}
+
+.hero-glow {
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(108, 92, 231, 0.2), transparent 70%);
+  animation: pulse 3s ease-in-out infinite;
+}
+
+/* ── How It Works ── */
+.how-it-works {
+  padding: 5rem 0;
+}
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.step-card {
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.step-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--clr-primary), var(--clr-accent));
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.step-card:hover::before {
+  opacity: 1;
+}
+
+.step-number {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  font-family: var(--font-display);
+  font-size: 3rem;
+  font-weight: 900;
+  color: rgba(108, 92, 231, 0.08);
+}
+
+.step-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.step-card h3 {
+  margin-bottom: 0.5rem;
+}
+
+.step-card p {
+  color: var(--clr-text-secondary);
+  font-size: 0.95rem;
+}
+
+/* ── Trust Section ── */
+.trust-section {
+  padding: 4rem 0;
+}
+
+.trust-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+}
+
+.trust-card {
+  text-align: center;
+}
+
+.trust-value {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 900;
+  margin-bottom: 0.25rem;
+}
+
+.trust-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--clr-text);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.trust-card p {
+  color: var(--clr-text-secondary);
+  font-size: 0.85rem;
+}
+
+/* ── CTA ── */
+.cta-section {
+  padding: 4rem 0;
+}
+
+.cta-card {
+  max-width: 600px;
+  margin: 0 auto;
+  border: var(--border-glow);
+}
+
+.cta-card h2 {
+  margin-bottom: 0.75rem;
+}
+
+.cta-card p {
+  color: var(--clr-text-secondary);
+  font-size: 1.05rem;
+}
+
+/* ── Footer ── */
+.footer {
+  padding: 3rem 0 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 2rem;
+}
+
+.footer-text {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.footer-sub {
+  font-size: 0.85rem;
+  color: var(--clr-text-muted);
+}
+
+@media (max-width: 768px) {
+  .hero .container {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .hero-subtitle {
+    margin: 1rem auto 0;
+  }
+
+  .hero-actions {
+    justify-content: center;
+  }
+
+  .hero-visual {
+    display: none;
+  }
+
+  .hero {
+    min-height: auto;
+    padding: 3rem 0;
+  }
+}

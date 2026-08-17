@@ -1,0 +1,222 @@
+.camera-capture {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.camera-start {
+  text-align: center;
+  cursor: pointer;
+  padding: 3rem 2rem;
+  transition: all var(--transition-base);
+}
+
+.camera-start:hover {
+  border-color: var(--clr-primary-light);
+}
+
+.camera-start-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  animation: float 2.5s ease-in-out infinite;
+}
+
+.camera-error {
+  text-align: center;
+  padding: 2rem;
+}
+
+.error-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.camera-preview {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #000;
+  aspect-ratio: 4/3;
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Guide overlay */
+.camera-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.nose-guide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.guide-circle {
+  width: 180px;
+  height: 180px;
+  border: 3px dashed rgba(108, 92, 231, 0.7);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 30px rgba(108, 92, 231, 0.15), inset 0 0 30px rgba(108, 92, 231, 0.05);
+}
+
+.guide-text {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  font-weight: 500;
+}
+
+.scan-line {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--clr-primary-light),
+    transparent
+  );
+  animation: scan-line 3s linear infinite;
+  opacity: 0.6;
+}
+
+/* Camera controls */
+.camera-controls {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+}
+
+.capture-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  border: 4px solid rgba(108, 92, 231, 0.6);
+  cursor: pointer;
+  position: relative;
+  transition: all var(--transition-fast);
+}
+
+.capture-btn:hover {
+  transform: scale(1.05);
+  border-color: var(--clr-primary);
+}
+
+.capture-btn:active {
+  transform: scale(0.95);
+}
+
+.capture-ring {
+  display: block;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--clr-primary), var(--clr-accent));
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.capture-counter {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-xl);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Captured previews */
+.captured-preview {
+  margin-top: 1.5rem;
+}
+
+.captured-grid {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.captured-thumb {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.captured-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumb-number {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: var(--clr-primary);
+  color: white;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.captured-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.capture-hint {
+  color: var(--clr-text-muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+  .guide-circle {
+    width: 140px;
+    height: 140px;
+  }
+
+  .capture-btn {
+    width: 64px;
+    height: 64px;
+  }
+
+  .capture-ring {
+    width: 48px;
+    height: 48px;
+  }
+}
