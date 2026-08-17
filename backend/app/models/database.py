@@ -6,6 +6,7 @@ Schema:
 - dogs: Dog profiles with breed, color, status
 - nose_prints: Biometric embeddings (pgvector) + photo references
 - match_logs: Audit trail for all matching attempts
+- staff_users: PawFriend staff accounts (JWT login)
 """
 
 import uuid
@@ -45,6 +46,7 @@ class Owner(Base):
     email = Column(String(255), nullable=True)
     address = Column(Text, nullable=True)
     consent_given_at = Column(DateTime(timezone=True), nullable=False)
+    consent_text_version = Column(String(32), nullable=False, default="v1")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -131,3 +133,15 @@ class MatchLog(Base):
 
     # Relationships
     matched_dog = relationship("Dog", foreign_keys=[top_match_dog_id])
+
+
+class StaffUser(Base):
+    """PawFriend staff — required before owner contact is visible."""
+
+    __tablename__ = "staff_users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="staff")  # staff | admin
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

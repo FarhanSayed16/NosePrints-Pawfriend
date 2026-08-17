@@ -7,7 +7,7 @@ from datetime import datetime, date
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 # ────────────────────────────────────────────
@@ -17,8 +17,23 @@ from pydantic import BaseModel, Field, EmailStr
 class OwnerCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     phone: str = Field(..., min_length=10, max_length=15)
-    email: Optional[str] = None
+    email: Optional[EmailStr] = None
     address: Optional[str] = None
+    consent: bool = Field(..., description="Must be true — DPDP Act explicit consent")
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def empty_email_to_none(cls, value):
+        if value == "" or value is None:
+            return None
+        return value
+
+    @field_validator("consent")
+    @classmethod
+    def consent_must_be_true(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("Explicit consent is required to register")
+        return value
 
 
 class OwnerResponse(BaseModel):
@@ -28,6 +43,7 @@ class OwnerResponse(BaseModel):
     email: Optional[str] = None
     address: Optional[str] = None
     consent_given_at: datetime
+    consent_text_version: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -36,8 +52,15 @@ class OwnerResponse(BaseModel):
 class OwnerUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     phone: Optional[str] = Field(None, min_length=10, max_length=15)
-    email: Optional[str] = None
+    email: Optional[EmailStr] = None
     address: Optional[str] = None
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def empty_email_to_none(cls, value):
+        if value == "" or value is None:
+            return None
+        return value
 
 
 # ────────────────────────────────────────────
@@ -126,7 +149,7 @@ class QualityCheckResult(BaseModel):
 # ────────────────────────────────────────────
 
 class MatchCandidate(BaseModel):
-    """A single candidate match from similarity search."""
+    """Public candidate — never includes owner contact."""
     dog_id: UUID
     dog_name: Optional[str] = None
     breed: Optional[str] = None
@@ -134,7 +157,6 @@ class MatchCandidate(BaseModel):
     similarity_score: float
     matched_image_url: str
     profile_photo_url: Optional[str] = None
-    owner_name: Optional[str] = None
     status: str
 
 
@@ -150,15 +172,26 @@ class MatchResponse(BaseModel):
 
 
 class MatchConfirmation(BaseModel):
-    """Staff confirmation of a match."""
+    """Staff confirmation of a match. confirmed_by comes from the JWT."""
     match_log_id: UUID
     confirmed: bool
-    confirmed_by: UUID  # Staff member UUID
 
 
 # ────────────────────────────────────────────
 # Registration Flow (Combined)
 # ────────────────────────────────────────────
+
+class CombinedRegisterRequest(BaseModel):
+    owner: OwnerCreate
+    dog: DogCreate
+
+
+class CombinedRegisterResponse(BaseModel):
+    """Owner payload is returned only to the registering client (their own data)."""
+    dog: DogResponse
+    owner: OwnerResponse
+    message: str = "Owner and dog registered successfully"
+
 
 class RegistrationResponse(BaseModel):
     """Response after registering a dog with nose prints."""
@@ -169,6 +202,23 @@ class RegistrationResponse(BaseModel):
 
 
 # ────────────────────────────────────────────
+# Staff Auth
+# ────────────────────────────────────────────
+
+class StaffLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=72)
+
+
+class StaffTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    staff_id: UUID
+    email: str
+    role: str
+
+
+# ────────────────────────────────────────────
 # Health / Info
 # ────────────────────────────────────────────
 
@@ -176,4 +226,4 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     database: str
-    ml_models: dict[str, bool]
+    ml_models: dict[str, bool | str]
