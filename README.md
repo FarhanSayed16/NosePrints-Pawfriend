@@ -6,8 +6,7 @@ Like human fingerprints, every dog's nose print is unique for life. NosePrints u
 
 **v1 scope:** nose-print ID only. Retina/iris scanning is out. Native apps are later.
 
-**Plan & status:** [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md) (source of truth) · [`docs/task.md`](docs/task.md) (checklist).  
-**Continue from Phase 1** (nose detector). Phase 0 safety freeze is in the repo.
+**Plan & status:** [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md) · [`docs/task.md`](docs/task.md) · [`docs/STAFF_SOP.md`](docs/STAFF_SOP.md) · [`docs/ACCURACY.md`](docs/ACCURACY.md) · **[`docs/DEPLOY.md`](docs/DEPLOY.md) (free standalone hosting)**.
 
 ### Staff login (Phase 0)
 Owner phone/email is staff-only. Create the first admin once, then log in:
@@ -24,7 +23,7 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
   -d "{\"email\":\"staff@pawfriend.in\",\"password\":\"choose-a-long-password\"}"
 ```
 
-Use the returned `access_token` as `Authorization: Bearer <token>` on `/api/v1/owners/` and `/api/v1/match/confirm`.
+Use the returned `access_token` as `Authorization: Bearer <token>` on `/api/v1/owners/` and `/api/v1/match/confirm`, or open **`/staff`** in the PWA to review the match queue.
 
 When `DEBUG=false`, identify/upload return **503** until a real `embedding_model.onnx` is present. Do not use the example JWT secret in production.
 

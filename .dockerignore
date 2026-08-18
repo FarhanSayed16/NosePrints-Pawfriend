@@ -1,0 +1,23 @@
+# CI / VCS
+.git
+.gitignore
+**/.venv
+**/venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+
+# Training data (huge) — keep ONNX for the image
+ml/data
+ml/checkpoints
+ml/runs
+ml/.venv
+frontend/dist
+
+# Secrets
+.env
+backend/.env
+
+# Local uploads
+uploads
+backend/uploads
