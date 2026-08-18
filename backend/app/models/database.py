@@ -73,6 +73,9 @@ class Dog(Base):
     last_seen_latitude = Column(Float, nullable=True)
     last_seen_longitude = Column(Float, nullable=True)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    last_seen_note = Column(Text, nullable=True)
+    found_notes = Column(Text, nullable=True)
+    listed_as_found_at = Column(DateTime(timezone=True), nullable=True)
     profile_photo_url = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -124,11 +127,13 @@ class MatchLog(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     query_image_url = Column(Text, nullable=True)
+    query_appearance_url = Column(Text, nullable=True)
     top_match_dog_id = Column(UUID(as_uuid=True), ForeignKey("dogs.id", ondelete="SET NULL"), nullable=True)
     top_match_score = Column(Float, nullable=True)
     confirmed_by = Column(UUID(as_uuid=True), nullable=True)  # Staff member UUID
     confirmed_at = Column(DateTime(timezone=True), nullable=True)
-    result_status = Column(String(20), nullable=True)  # matched / no_match / false_positive
+    result_status = Column(String(20), nullable=True)  # matched / possible_match / no_match / false_positive
+    staff_notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships

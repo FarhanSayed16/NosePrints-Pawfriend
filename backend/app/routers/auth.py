@@ -7,8 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.deps import get_current_staff
 from app.models.database import StaffUser
-from app.schemas import StaffLoginRequest, StaffTokenResponse
+from app.schemas import StaffLoginRequest, StaffMeResponse, StaffTokenResponse
 from app.services.auth import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -70,3 +71,9 @@ async def login(
         email=staff.email,
         role=staff.role,
     )
+
+
+@router.get("/me", response_model=StaffMeResponse)
+async def staff_me(staff: StaffUser = Depends(get_current_staff)):
+    """Current staff user from JWT."""
+    return StaffMeResponse(staff_id=staff.id, email=staff.email, role=staff.role)
