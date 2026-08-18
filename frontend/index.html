@@ -2,19 +2,40 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="description" content="NosePrints × PawFriend — AI-powered dog nose-print biometric identification. Register your dog, find lost pets, identify strays. No app install needed." />
-    <meta name="theme-color" content="#6c5ce7" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
+    <meta name="description" content="NosePrints × PawFriend — AI-powered dog nose-print biometric identification. Register your dog, find lost pets, identify strays." />
+    <meta name="theme-color" content="#1b8cbe" />
+
+    <!-- PWA / Mobile -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="NosePrints" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
 
-    <title>NosePrints × PawFriend — Dog Biometric ID</title>
+    <title>NosePrints × PawFriend</title>
 
     <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <div id="root">
+      <p style="font-family:sans-serif;padding:2rem;color:#1a2b3c">Loading NosePrints…</p>
+    </div>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) { r.unregister(); });
+        });
+        if (window.caches) {
+          caches.keys().then(function (keys) {
+            keys.forEach(function (k) { caches.delete(k); });
+          });
+        }
+      }
+    </script>
+    <script type="module" src="/src/main.jsx" data-cfasync="false"></script>
   </body>
 </html>
