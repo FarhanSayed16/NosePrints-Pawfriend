@@ -10,12 +10,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_staff
-from app.models.database import Owner, StaffUser
+from app.models.database import Dog, Owner, StaffUser
 from app.schemas import OwnerCreate, OwnerResponse, OwnerUpdate
+from app.services import storage_service
 
 router = APIRouter(prefix="/owners", tags=["Owners"])
 
@@ -98,11 +100,25 @@ async def delete_owner(
     """
     Delete owner and all associated data.
     DPDP Act compliance: supports full data erasure on request.
-    Cascade deletes dogs and their nose prints.
+    Cascade deletes dogs and their nose prints, and removes stored photos.
     """
-    result = await db.execute(select(Owner).where(Owner.id == owner_id))
+    result = await db.execute(
+        select(Owner)
+        .where(Owner.id == owner_id)
+        .options(selectinload(Owner.dogs).selectinload(Dog.nose_prints))
+    )
     owner = result.scalar_one_or_none()
     if not owner:
         raise HTTPException(status_code=404, detail="Owner not found")
 
+    urls: list[str] = []
+    for dog in owner.dogs:
+        if dog.profile_photo_url:
+            urls.append(dog.profile_photo_url)
+        for print_row in dog.nose_prints:
+            if print_row.image_url:
+                urls.append(print_row.image_url)
+
     await db.delete(owner)
+    for url in urls:
+        await storage_service.delete_image(url)

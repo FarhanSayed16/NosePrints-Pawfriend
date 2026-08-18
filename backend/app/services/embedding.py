@@ -73,7 +73,8 @@ class EmbeddingExtractor:
         input_w = self.input_shape[3] if len(self.input_shape) == 4 else 224
 
         resized = cv2.resize(nose_image, (input_w, input_h))
-        # ImageNet normalization (standard for ResNet50)
+        resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        # ImageNet normalization (standard for ResNet50 / our ArcFace training)
         img = resized.astype(np.float32) / 255.0
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         std = np.array([0.229, 0.224, 0.225], dtype=np.float32)

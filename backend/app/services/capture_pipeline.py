@@ -33,7 +33,7 @@ class PreparedScan:
     quality: QualityCheckResult
 
 
-def prepare_nose_scan(image_bytes: bytes) -> PreparedScan:
+def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> PreparedScan:
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty file")
 
@@ -51,15 +51,22 @@ def prepare_nose_scan(image_bytes: bytes) -> PreparedScan:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if detection.bbox is None or detection.crop is None or detection.crop.size == 0:
-        raise HTTPException(status_code=422, detail=NO_NOSE_DETAIL)
-
     orig_h, orig_w = detection.original.shape[:2]
+    crop = detection.crop
+    bbox = detection.bbox
+    if bbox is None or crop is None or crop.size == 0:
+        if pre_cropped:
+            crop = detection.original
+            bbox = (0, 0, orig_w, orig_h)
+        else:
+            raise HTTPException(status_code=422, detail=NO_NOSE_DETAIL)
+
     quality = assess_crop_quality(
-        detection.crop,
-        detection.bbox,
+        crop,
+        bbox,
         orig_w,
         orig_h,
+        check_coverage=not pre_cropped,
     )
     if not quality.passed:
         raise HTTPException(
@@ -68,9 +75,9 @@ def prepare_nose_scan(image_bytes: bytes) -> PreparedScan:
                 "message": "Image quality too low for a reliable nose print",
                 "issues": quality.issues,
                 "suggestions": [
-                    "Hold the phone steady and close to the dog's nose",
-                    "Ensure good lighting — avoid shadows on the nose",
-                    "Keep the nose inside the guide circle with a little muzzle visible",
+                    "Get closer so the black nose leather fills most of the crop box",
+                    "Hold the phone steady — a zoomed-in body photo will look blurry",
+                    "Use even lighting and avoid shadows on the nose",
                 ],
                 "scores": {
                     "sharpness": quality.sharpness_score,
@@ -83,8 +90,8 @@ def prepare_nose_scan(image_bytes: bytes) -> PreparedScan:
 
     return PreparedScan(
         original=detection.original,
-        crop=detection.crop,
-        bbox=detection.bbox,
+        crop=crop,
+        bbox=bbox,
         confidence=detection.confidence,
         quality=quality,
     )

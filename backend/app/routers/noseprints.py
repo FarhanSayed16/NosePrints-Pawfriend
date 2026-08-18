@@ -5,7 +5,7 @@ Handles the full pipeline: upload → detect nose → quality check → extract 
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/noseprints", tags=["Nose Prints"])
 
+_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+def sniff_image_content_type(data: bytes, declared: str | None) -> str:
+    """Accept empty/Android MIME types when the bytes are clearly an image."""
+    raw = (declared or "").lower().split(";")[0].strip()
+    if raw in {"image/jpg", "image/pjpeg"}:
+        raw = "image/jpeg"
+    if raw in _IMAGE_TYPES:
+        return raw
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG"):
+        return "image/png"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    raise HTTPException(
+        status_code=400,
+        detail="Only JPEG, PNG, and WebP images are supported. HEIC must be converted on the phone.",
+    )
+
 
 @router.post(
     "/upload/{dog_id}",
@@ -36,6 +57,7 @@ router = APIRouter(prefix="/noseprints", tags=["Nose Prints"])
 async def upload_nose_print(
     dog_id: UUID,
     file: UploadFile = File(..., description="Nose print photo (JPEG/PNG)"),
+    pre_cropped: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -75,12 +97,10 @@ async def upload_nose_print(
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    content_type = file.content_type or "image/jpeg"
-    if content_type not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are supported")
+    content_type = sniff_image_content_type(image_bytes, file.content_type)
 
     # 4–5. Detect nose (reject misses) + quality on crop
-    scan = prepare_nose_scan(image_bytes)
+    scan = prepare_nose_scan(image_bytes, pre_cropped=pre_cropped)
 
     # 6. Extract embedding from the cropped nose
     embedding = embedding_extractor.extract(scan.crop)
