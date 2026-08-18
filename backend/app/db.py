@@ -3,17 +3,39 @@ Async database session management using SQLAlchemy 2.0.
 Provides the async engine, session factory, and dependency injection.
 """
 
+import ssl
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from app.config import settings
 
-# Async engine — connection pool for PostgreSQL
+
+def _ssl_connect_args() -> dict:
+    db_url = settings.DATABASE_URL
+    if "localhost" in db_url or "127.0.0.1" in db_url:
+        return {}
+    if settings.DATABASE_SSL_VERIFY:
+        try:
+            import certifi
+
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            ctx = True
+        return {"ssl": ctx}
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return {"ssl": ctx}
+
+
+_db_url = settings.DATABASE_URL
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    _db_url,
     echo=settings.DEBUG,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,  # Detect stale connections
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
+    connect_args=_ssl_connect_args(),
 )
 
 # Session factory — creates new sessions per request
@@ -55,5 +77,25 @@ async def init_db():
             text(
                 "ALTER TABLE owners "
                 "ADD COLUMN IF NOT EXISTS consent_text_version VARCHAR(32) NOT NULL DEFAULT 'v1'"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS last_seen_note TEXT")
+        )
+        await conn.execute(
+            text("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS found_notes TEXT")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE dogs ADD COLUMN IF NOT EXISTS listed_as_found_at TIMESTAMPTZ"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE match_logs ADD COLUMN IF NOT EXISTS staff_notes TEXT")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE match_logs "
+                "ADD COLUMN IF NOT EXISTS query_appearance_url TEXT"
             )
         )

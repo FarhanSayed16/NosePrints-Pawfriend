@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select, text
 
 from app.config import settings
+from app.middleware import RateLimitMiddleware
 from app.routers import (
     auth_router,
     dogs_router,
@@ -86,14 +87,13 @@ async def lifespan(app: FastAPI):
     embedding_extractor.load()
     storage_service.init()
 
-    if settings.DEBUG:
-        try:
-            from app.db import init_db
+    try:
+        from app.db import init_db
 
-            await init_db()
-            logger.info("Database tables created/verified")
-        except Exception as e:
-            logger.warning(f"Database init skipped (OK if using Alembic): {e}")
+        await init_db()
+        logger.info("Database tables created/verified")
+    except Exception as e:
+        logger.warning(f"Database init skipped: {e}")
 
     try:
         await _bootstrap_staff_from_env()
@@ -122,18 +122,31 @@ app = FastAPI(
         "reunite lost pets with owners, and identify found strays."
     ),
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
 )
 
 # ── CORS ──
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_kwargs = {
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+if settings.DEBUG:
+    # Allow phone on same Wi‑Fi (LAN IP) during local testing
+    _cors_kwargs["allow_origin_regex"] = (
+        r"https?://("
+        r"localhost|127\.0\.0\.1|"
+        r"192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"([a-z0-9-]+\.)?farhanbuilds\.in|"
+        r"[a-z0-9-]+\.trycloudflare\.com"
+        r")(:\d+)?"
+    )
+else:
+    _cors_kwargs["allow_origins"] = settings.CORS_ORIGINS
+
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
+app.add_middleware(RateLimitMiddleware)
 
 # ── Static files (for local dev uploads) ──
 uploads_dir = Path("uploads")
@@ -191,13 +204,39 @@ async def health_check():
     )
 
 
-@app.get("/", tags=["System"])
-async def root():
-    """Root endpoint — basic info."""
-    return {
-        "service": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "docs": "/docs",
-        "health": "/health",
-        "api": f"{API_PREFIX}/",
-    }
+if settings.SERVE_FRONTEND:
+    from fastapi.responses import FileResponse
+
+    _frontend_dir = Path(settings.FRONTEND_DIR)
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve the PWA; unknown paths fall back to index.html for client routing."""
+        if full_path.startswith("api/") or full_path in {
+            "health",
+            "docs",
+            "redoc",
+            "openapi.json",
+        }:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404)
+        candidate = _frontend_dir / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        index = _frontend_dir / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Frontend not built")
+else:
+
+    @app.get("/", tags=["System"])
+    async def root():
+        return {
+            "service": settings.APP_NAME,
+            "version": settings.APP_VERSION,
+            "health": "/health",
+            "api": f"{API_PREFIX}/",
+        }

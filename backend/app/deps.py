@@ -15,6 +15,7 @@ from app.db import get_db
 from app.models.database import StaffUser
 
 bearer_scheme = HTTPBearer(auto_error=True)
+optional_bearer = HTTPBearer(auto_error=False)
 
 
 async def get_current_staff(
@@ -46,3 +47,16 @@ async def get_current_staff(
     if staff is None:
         raise credentials_exc
     return staff
+
+
+async def get_optional_staff(
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> StaffUser | None:
+    """Return staff if a valid JWT is present; otherwise None (public caller)."""
+    if credentials is None:
+        return None
+    try:
+        return await get_current_staff(credentials, db)
+    except HTTPException:
+        return None
