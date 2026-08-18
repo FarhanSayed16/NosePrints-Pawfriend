@@ -11,6 +11,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from app.config import settings
+from app.services.media_urls import is_trusted_media_url
 import logging
 
 logger = logging.getLogger(__name__)
@@ -101,11 +102,37 @@ class StorageService:
         logger.debug(f"Saved locally: {filepath}")
         return url
 
+    def is_trusted_url(self, url: str | None) -> bool:
+        return is_trusted_media_url(url, bucket=settings.S3_BUCKET_NAME)
+
+    def _local_path(self, url: str) -> Path:
+        relative = url[len("/uploads/") :] if url.startswith("/uploads/") else url.lstrip("/")
+        return self._local_dir / relative
+
+    async def read_image(self, url: str) -> bytes | None:
+        """Read bytes for a previously uploaded object. Returns None if untrusted/missing."""
+        if not self.is_trusted_url(url):
+            return None
+        if self._use_local:
+            path = self._local_path(url)
+            if path.exists() and path.is_file():
+                return path.read_bytes()
+            return None
+        try:
+            key = url.split(f"{settings.S3_BUCKET_NAME}/")[-1]
+            obj = self.s3_client.get_object(Bucket=settings.S3_BUCKET_NAME, Key=key)
+            return obj["Body"].read()
+        except ClientError as e:
+            logger.error(f"S3 read failed: {e}")
+            return None
+
     async def delete_image(self, url: str) -> bool:
         """Delete an image by URL. Supports DPDP Act data deletion requirement."""
+        if not self.is_trusted_url(url):
+            return False
         if self._use_local:
             try:
-                filepath = Path(url.lstrip("/"))
+                filepath = self._local_path(url)
                 if filepath.exists():
                     filepath.unlink()
                 return True
