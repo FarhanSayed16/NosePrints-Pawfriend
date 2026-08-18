@@ -1,89 +1,137 @@
+/* ────────────────────────────────────────
+   Navbar — NosePrints × PawFriend
+   ──────────────────────────────────────── */
+
 .navbar {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(15, 15, 26, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .navbar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1.5rem;
   max-width: 1200px;
   margin: 0 auto;
+  padding: 0 2rem;
+  height: 64px;
 }
 
+/* ── Brand ── */
 .navbar-brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: var(--clr-text);
+  gap: 0.65rem;
   text-decoration: none;
+  flex-shrink: 0;
 }
 
-.brand-icon {
-  font-size: 1.75rem;
-  animation: float 3s ease-in-out infinite;
-}
-
-.nav-links {
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1b8cbe, #14709a);
+  color: #ffffff;
   display: flex;
-  list-style: none;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(27, 140, 190, 0.25);
+}
+
+.brand-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #1a2b3c;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.brand-org {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #8a95a3;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+/* ── Nav Menu ── */
+.nav-menu {
+  display: flex;
+  align-items: center;
   gap: 0.25rem;
 }
 
-.nav-link {
+.nav-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  gap: 0.35rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.84rem;
   font-weight: 500;
-  color: var(--clr-text-secondary);
-  border-radius: var(--radius-md);
-  transition: all var(--transition-fast);
+  color: #5a6b7d;
+  border-radius: 8px;
+  transition: all 0.15s ease;
   text-decoration: none;
+  white-space: nowrap;
 }
 
-.nav-link:hover {
-  color: var(--clr-text);
-  background: rgba(255, 255, 255, 0.05);
+.nav-item:hover {
+  color: #1b8cbe;
+  background: #e8f4fa;
 }
 
-.nav-link.active {
-  color: var(--clr-primary-light);
-  background: rgba(108, 92, 231, 0.12);
+.nav-item.active {
+  color: #1b8cbe;
+  background: #e8f4fa;
+  font-weight: 600;
 }
 
-.nav-icon {
-  font-size: 1.1rem;
+.nav-item-icon {
+  opacity: 0.65;
+  transition: opacity 0.15s ease;
 }
 
-/* Hamburger */
+.nav-item:hover .nav-item-icon,
+.nav-item.active .nav-item-icon {
+  opacity: 1;
+}
+
+/* ── Hamburger ── */
 .hamburger {
   display: none;
   flex-direction: column;
+  justify-content: center;
   gap: 5px;
+  width: 36px;
+  height: 36px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 0.5rem;
+  padding: 6px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.hamburger:hover {
+  background: #f0f4f7;
 }
 
 .hamburger span {
   display: block;
-  width: 24px;
+  width: 100%;
   height: 2px;
-  background: var(--clr-text);
-  transition: all var(--transition-base);
-  border-radius: 2px;
+  background: #1a2b3c;
+  border-radius: 1px;
+  transition: all 0.25s ease;
 }
 
 .hamburger.active span:nth-child(1) {
@@ -96,31 +144,46 @@
   transform: rotate(-45deg) translate(5px, -5px);
 }
 
+/* ── Mobile ── */
 @media (max-width: 768px) {
+  .navbar-inner {
+    padding: 0 1rem;
+    height: 56px;
+  }
+
   .hamburger {
     display: flex;
   }
 
-  .nav-links {
+  .nav-menu {
     display: none;
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
     flex-direction: column;
-    background: rgba(15, 15, 26, 0.95);
-    backdrop-filter: blur(20px);
-    padding: 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background: #ffffff;
+    padding: 0.5rem 0.75rem 0.75rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    gap: 0.15rem;
   }
 
-  .nav-links.open {
+  .nav-menu.open {
     display: flex;
-    animation: fadeIn 0.3s ease-out;
+    animation: fadeIn 0.15s ease-out;
   }
 
-  .nav-link {
-    padding: 0.75rem 1rem;
-    font-size: 1rem;
+  .nav-item {
+    padding: 0.7rem 1rem;
+    font-size: 0.92rem;
+    border-radius: 10px;
+  }
+
+  .brand-name {
+    font-size: 1.1rem;
+  }
+
+  .brand-org {
+    display: none;
   }
 }
