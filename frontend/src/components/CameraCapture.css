@@ -12,13 +12,19 @@
 }
 
 .camera-start:hover {
-  border-color: var(--clr-primary-light);
+  border-color: var(--clr-primary);
 }
 
 .camera-start-icon {
-  font-size: 4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-full);
+  background: var(--clr-primary-50);
+  color: var(--clr-primary);
   margin-bottom: 1rem;
-  animation: float 2.5s ease-in-out infinite;
 }
 
 .camera-error {
@@ -27,8 +33,14 @@
 }
 
 .error-icon {
-  font-size: 2.5rem;
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: #fdecea;
+  color: var(--clr-danger);
   margin-bottom: 0.75rem;
 }
 
@@ -41,15 +53,35 @@
 }
 
 .camera-video {
+  display: block;
+  position: relative;
+  z-index: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  background: #111;
+  transform: translateZ(0);
+}
+
+.camera-file-fallback {
+  display: block;
+  margin-top: 0.85rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--clr-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.camera-file-fallback input {
+  display: none;
 }
 
 /* Guide overlay */
 .camera-overlay {
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
 }
 
@@ -64,18 +96,28 @@
 .guide-circle {
   width: 180px;
   height: 180px;
-  border: 3px dashed rgba(108, 92, 231, 0.7);
+  border: 3px dashed rgba(27, 140, 190, 0.8);
   border-radius: 50%;
   animation: pulse 2s ease-in-out infinite;
-  box-shadow: 0 0 30px rgba(108, 92, 231, 0.15), inset 0 0 30px rgba(108, 92, 231, 0.05);
+  box-shadow: 0 0 24px rgba(27, 140, 190, 0.15), inset 0 0 24px rgba(27, 140, 190, 0.05);
+}
+
+.guide-circle.guide-ok {
+  border-color: rgba(46, 204, 113, 0.9);
+  animation: none;
+  box-shadow: 0 0 20px rgba(46, 204, 113, 0.25);
 }
 
 .guide-text {
-  margin-top: 1rem;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.8);
+  margin-top: 0.75rem;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.85);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   font-weight: 500;
+}
+
+.guide-text.hint-ok {
+  color: #7dffa8;
 }
 
 .scan-line {
@@ -86,31 +128,32 @@
   background: linear-gradient(
     90deg,
     transparent,
-    var(--clr-primary-light),
+    rgba(27, 140, 190, 0.7),
     transparent
   );
   animation: scan-line 3s linear infinite;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 /* Camera controls */
 .camera-controls {
   position: absolute;
-  bottom: 1.5rem;
+  bottom: 1.25rem;
   left: 0;
   right: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .capture-btn {
-  width: 72px;
-  height: 72px;
+  width: 68px;
+  height: 68px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
-  border: 4px solid rgba(108, 92, 231, 0.6);
+  background: rgba(255, 255, 255, 0.92);
+  border: 4px solid rgba(27, 140, 190, 0.6);
   cursor: pointer;
   position: relative;
   transition: all var(--transition-fast);
@@ -127,10 +170,10 @@
 
 .capture-ring {
   display: block;
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--clr-primary), var(--clr-accent));
+  background: var(--clr-primary);
   position: absolute;
   top: 50%;
   left: 50%;
@@ -139,34 +182,34 @@
 
 .capture-counter {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
-  background: rgba(0, 0, 0, 0.6);
+  top: 0.75rem;
+  right: 0.75rem;
+  background: rgba(0, 0, 0, 0.55);
   color: white;
-  padding: 0.35rem 0.75rem;
+  padding: 0.3rem 0.7rem;
   border-radius: var(--radius-xl);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
 }
 
 /* Captured previews */
 .captured-preview {
-  margin-top: 1.5rem;
+  margin-top: 1.25rem;
 }
 
 .captured-grid {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
 }
 
 .captured-thumb {
   position: relative;
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   border-radius: var(--radius-md);
   overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  border: 2px solid #e2e8f0;
 }
 
 .captured-thumb img {
@@ -177,31 +220,31 @@
 
 .thumb-number {
   position: absolute;
-  bottom: 4px;
-  right: 4px;
+  bottom: 3px;
+  right: 3px;
   background: var(--clr-primary);
   color: white;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 700;
 }
 
 .captured-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  margin-top: 1rem;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
   flex-wrap: wrap;
 }
 
 .capture-hint {
   color: var(--clr-text-muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 @media (max-width: 768px) {
@@ -211,12 +254,12 @@
   }
 
   .capture-btn {
-    width: 64px;
-    height: 64px;
+    width: 60px;
+    height: 60px;
   }
 
   .capture-ring {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
   }
 }
