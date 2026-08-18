@@ -1,0 +1,132 @@
+.crop-editor {
+  padding: 1rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.crop-msg {
+  font-size: 0.9rem;
+  color: var(--clr-text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.crop-stage {
+  position: relative;
+  touch-action: none;
+  background: #111;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  user-select: none;
+  width: 100%;
+  max-width: 100%;
+}
+
+.crop-stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  pointer-events: none;
+}
+
+.crop-dim {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.48);
+  pointer-events: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px solid #3ec6f0;
+  cursor: move;
+  touch-action: none;
+  box-sizing: border-box;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  background: #fff;
+  border: 2px solid #3ec6f0;
+  border-radius: 6px;
+  touch-action: none;
+  z-index: 2;
+}
+
+.crop-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
+.crop-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.crop-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
+.crop-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }
+.crop-handle.n { left: 50%; top: 0; cursor: ns-resize; }
+.crop-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
+.crop-handle.w { left: 0; top: 50%; cursor: ew-resize; }
+.crop-handle.e { left: 100%; top: 50%; cursor: ew-resize; }
+
+.crop-nudge {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.crop-nudge .btn {
+  flex: 1;
+  min-width: 0;
+}
+
+.crop-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  min-width: 0;
+}
+
+.crop-preview-row img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #111;
+  flex-shrink: 0;
+}
+
+.crop-preview-row p {
+  font-size: 0.82rem;
+  color: var(--clr-text-secondary);
+  margin: 0;
+}
+
+.crop-warn {
+  color: var(--clr-danger);
+  font-size: 0.85rem;
+  margin-top: 0.6rem;
+}
+
+.crop-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: stretch;
+  margin-top: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.crop-actions .btn {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .crop-nudge,
+  .crop-actions {
+    flex-direction: column;
+  }
+
+  .crop-nudge .btn,
+  .crop-actions .btn {
+    width: 100%;
+  }
+}

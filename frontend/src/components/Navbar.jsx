@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import Icon from "./Icon";
 import "./Navbar.css";
 
 export default function Navbar() {
@@ -7,21 +8,25 @@ export default function Navbar() {
   const location = useLocation();
 
   const links = [
-    { to: "/", label: "Home", icon: "🏠" },
-    { to: "/register", label: "Register Dog", icon: "📝" },
-    { to: "/identify", label: "Identify Dog", icon: "🔍" },
-    { to: "/directory", label: "Directory", icon: "📋" },
-    { to: "/lost", label: "Lost Dogs", icon: "🚨" },
+    { to: "/", label: "Home", icon: "home" },
+    { to: "/register", label: "Register", icon: "register" },
+    { to: "/identify", label: "Identify", icon: "scan" },
+    { to: "/directory", label: "Directory", icon: "grid" },
+    { to: "/lost", label: "Lost Dogs", icon: "alert" },
+    { to: "/staff", label: "Staff", icon: "shield" },
   ];
 
   return (
     <nav className="navbar">
-      <div className="navbar-inner container">
+      <div className="navbar-inner">
         <Link to="/" className="navbar-brand">
-          <span className="brand-icon">🐾</span>
-          <span className="brand-text">
-            Nose<span className="text-gradient">Prints</span>
-          </span>
+          <div className="brand-mark">
+            <Icon name="paw" size={18} />
+          </div>
+          <div className="brand-info">
+            <span className="brand-name">NosePrints</span>
+            <span className="brand-org">by PawFriend.in</span>
+          </div>
         </Link>
 
         <button
@@ -34,22 +39,19 @@ export default function Navbar() {
           <span></span>
         </button>
 
-        <ul className={`nav-links ${menuOpen ? "open" : ""}`}>
+        <div className={`nav-menu ${menuOpen ? "open" : ""}`}>
           {links.map((link) => (
-            <li key={link.to}>
-              <Link
-                to={link.to}
-                className={`nav-link ${
-                  location.pathname === link.to ? "active" : ""
-                }`}
-                onClick={() => setMenuOpen(false)}
-              >
-                <span className="nav-icon">{link.icon}</span>
-                {link.label}
-              </Link>
-            </li>
+            <Link
+              key={link.to}
+              to={link.to}
+              className={`nav-item ${location.pathname === link.to ? "active" : ""}`}
+              onClick={() => setMenuOpen(false)}
+            >
+              <Icon name={link.icon} size={15} className="nav-item-icon" />
+              <span className="nav-item-label">{link.label}</span>
+            </Link>
           ))}
-        </ul>
+        </div>
       </div>
     </nav>
   );
