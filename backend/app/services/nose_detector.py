@@ -164,6 +164,28 @@ def shift_bbox(
     return clip_bbox((x1 + dx, y1 + dy, x2 + dx, y2 + dy), orig_w, orig_h)
 
 
+MAX_DETECT_EDGE = 1280
+
+
+def _downscale_for_detect(img: np.ndarray) -> tuple[np.ndarray, float]:
+    """Shrink huge phone photos before ONNX so tunnel uploads stay fast."""
+    orig_h, orig_w = img.shape[:2]
+    edge = max(orig_h, orig_w)
+    if edge <= MAX_DETECT_EDGE:
+        return img, 1.0
+    scale = MAX_DETECT_EDGE / edge
+    new_w = max(1, int(round(orig_w * scale)))
+    new_h = max(1, int(round(orig_h * scale)))
+    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return resized, scale
+
+
+def _scale_bbox(bbox: tuple[int, int, int, int], inv_scale: float) -> tuple[int, int, int, int]:
+    if inv_scale == 1.0:
+        return bbox
+    return tuple(int(round(v * inv_scale)) for v in bbox)
+
+
 class NoseDetector:
     """YOLOv8-nano ONNX nose detector."""
 
@@ -229,26 +251,32 @@ class NoseDetector:
             return DetectionResult(original=img, crop=None, bbox=None, confidence=0.0)
 
         orig_h, orig_w = img.shape[:2]
+        work_img, detect_scale = _downscale_for_detect(img)
+        inv_scale = 1.0 / detect_scale
+        work_h, work_w = work_img.shape[:2]
         primary_conf = settings.DETECTOR_CONF_THRESHOLD
         retry_conf = settings.DETECTOR_RETRY_CONF_THRESHOLD
         pad_frac = settings.DETECTOR_CLOSEUP_PAD
 
-        bbox, conf = self._infer(img, primary_conf)
+        bbox, conf = self._infer(work_img, primary_conf)
 
         # YOLO often misses noses that already fill the frame. Pad and retry.
         if bbox is None and pad_frac > 0:
-            ph = max(1, int(round(orig_h * pad_frac)))
-            pw = max(1, int(round(orig_w * pad_frac)))
+            ph = max(1, int(round(work_h * pad_frac)))
+            pw = max(1, int(round(work_w * pad_frac)))
             padded = cv2.copyMakeBorder(
-                img, ph, ph, pw, pw, cv2.BORDER_CONSTANT, value=(114, 114, 114)
+                work_img, ph, ph, pw, pw, cv2.BORDER_CONSTANT, value=(114, 114, 114)
             )
             bbox_p, conf_p = self._infer(padded, primary_conf)
             if bbox_p is not None:
-                bbox = shift_bbox(bbox_p, dx=-pw, dy=-ph, orig_w=orig_w, orig_h=orig_h)
+                bbox = shift_bbox(bbox_p, dx=-pw, dy=-ph, orig_w=work_w, orig_h=work_h)
                 conf = conf_p
 
         if bbox is None and retry_conf < primary_conf:
-            bbox, conf = self._infer(img, retry_conf)
+            bbox, conf = self._infer(work_img, retry_conf)
+
+        if bbox is not None:
+            bbox = _scale_bbox(bbox, inv_scale)
 
         if bbox is None:
             logger.info("No nose detected")
