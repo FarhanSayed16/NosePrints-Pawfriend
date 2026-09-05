@@ -1,6 +1,7 @@
 # NosePrints — standalone free deployment guide
 
 **Final Phase A plan (senior-ready overview):** [`PHASE_A_DEPLOYMENT.md`](./PHASE_A_DEPLOYMENT.md)  
+**Phase A cost & unit metrics:** [`PHASE_A_COST_ESTIMATE.md`](./PHASE_A_COST_ESTIMATE.md)  
 This file is the click-by-click companion to that plan.
 
 Follow this **in order**. Do not skip steps.  

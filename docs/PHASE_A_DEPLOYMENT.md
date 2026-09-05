@@ -2,7 +2,7 @@
 
 **Status:** Final plan for standalone demo  
 **Audience:** Intern / builder, mentor, PawFriend technical lead  
-**Related:** Step-by-step CLI detail remains in [`DEPLOY.md`](./DEPLOY.md). Product roadmap: [`MASTER_PLAN.md`](./MASTER_PLAN.md).
+**Related:** Step-by-step CLI detail remains in [`DEPLOY.md`](./DEPLOY.md). Cost & unit metrics: [`PHASE_A_COST_ESTIMATE.md`](./PHASE_A_COST_ESTIMATE.md). Product roadmap: [`MASTER_PLAN.md`](./MASTER_PLAN.md).
 
 ---
 
