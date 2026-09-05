@@ -1,11 +1,12 @@
 """
 S3-compatible object storage service.
-Handles photo uploads to Cloudflare R2 / Backblaze B2 / AWS S3.
+Handles photo uploads to Cloudflare R2 / Backblaze B2 / AWS S3 / GCS (S3 API).
 Falls back to local filesystem storage for development.
 """
 
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 import boto3
 from botocore.exceptions import ClientError
@@ -28,6 +29,13 @@ class StorageService:
         self._use_local = False
         self._local_dir = Path("uploads")
 
+    @property
+    def mode(self) -> str:
+        """Report backend for /health — local | s3."""
+        if self._use_local or self.s3_client is None:
+            return "local"
+        return "s3"
+
     def init(self):
         """Initialize the storage backend. Called once at startup."""
         if settings.S3_ENDPOINT_URL and settings.S3_ACCESS_KEY:
@@ -39,16 +47,48 @@ class StorageService:
                     aws_secret_access_key=settings.S3_SECRET_KEY,
                     region_name=settings.S3_REGION,
                 )
-                logger.info(f"S3 storage initialized: {settings.S3_ENDPOINT_URL}")
+                public = (settings.S3_PUBLIC_BASE_URL or "").rstrip("/") or "(endpoint path-style)"
+                logger.info(
+                    "S3 storage initialized: endpoint=%s public=%s bucket=%s",
+                    settings.S3_ENDPOINT_URL,
+                    public,
+                    settings.S3_BUCKET_NAME,
+                )
             except Exception as e:
                 logger.warning(f"S3 init failed, falling back to local: {e}")
                 self._use_local = True
+                self.s3_client = None
         else:
             logger.info("S3 not configured — using local filesystem storage")
             self._use_local = True
 
         if self._use_local:
             self._local_dir.mkdir(parents=True, exist_ok=True)
+
+    def _public_url(self, key: str) -> str:
+        """URL stored in DB / returned to browsers."""
+        base = (settings.S3_PUBLIC_BASE_URL or "").rstrip("/")
+        if base:
+            return f"{base}/{key}"
+        endpoint = (settings.S3_ENDPOINT_URL or "").rstrip("/")
+        return f"{endpoint}/{settings.S3_BUCKET_NAME}/{key}"
+
+    def _key_from_url(self, url: str) -> str | None:
+        """Extract object key from a stored URL (public or path-style API)."""
+        if not url:
+            return None
+        if url.startswith("/uploads/"):
+            return url[len("/uploads/") :]
+        bucket = settings.S3_BUCKET_NAME
+        public = (settings.S3_PUBLIC_BASE_URL or "").rstrip("/")
+        if public and url.startswith(public + "/"):
+            return url[len(public) + 1 :]
+        marker = f"/{bucket}/"
+        if marker in url:
+            return url.split(marker, 1)[-1]
+        # Custom domain where path is the key only
+        path = urlparse(url).path.lstrip("/")
+        return path or None
 
     async def upload_image(
         self,
@@ -86,7 +126,7 @@ class StorageService:
                 Body=image_bytes,
                 ContentType=content_type,
             )
-            url = f"{settings.S3_ENDPOINT_URL}/{settings.S3_BUCKET_NAME}/{key}"
+            url = self._public_url(key)
             logger.debug(f"Uploaded to S3: {url}")
             return url
         except ClientError as e:
@@ -103,7 +143,11 @@ class StorageService:
         return url
 
     def is_trusted_url(self, url: str | None) -> bool:
-        return is_trusted_media_url(url, bucket=settings.S3_BUCKET_NAME)
+        return is_trusted_media_url(
+            url,
+            bucket=settings.S3_BUCKET_NAME,
+            public_base=settings.S3_PUBLIC_BASE_URL,
+        )
 
     def _local_path(self, url: str) -> Path:
         relative = url[len("/uploads/") :] if url.startswith("/uploads/") else url.lstrip("/")
@@ -119,7 +163,9 @@ class StorageService:
                 return path.read_bytes()
             return None
         try:
-            key = url.split(f"{settings.S3_BUCKET_NAME}/")[-1]
+            key = self._key_from_url(url)
+            if not key:
+                return None
             obj = self.s3_client.get_object(Bucket=settings.S3_BUCKET_NAME, Key=key)
             return obj["Body"].read()
         except ClientError as e:
@@ -141,7 +187,9 @@ class StorageService:
                 return False
         else:
             try:
-                key = url.split(f"{settings.S3_BUCKET_NAME}/")[-1]
+                key = self._key_from_url(url)
+                if not key:
+                    return False
                 self.s3_client.delete_object(
                     Bucket=settings.S3_BUCKET_NAME,
                     Key=key,

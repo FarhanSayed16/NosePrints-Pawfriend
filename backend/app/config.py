@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     S3_SECRET_KEY: Optional[str] = None
     S3_BUCKET_NAME: str = "noseprints-photos"
     S3_REGION: str = "auto"
+    # Browser-facing base (R2 public / custom domain). If unset, falls back to endpoint/bucket path.
+    S3_PUBLIC_BASE_URL: Optional[str] = None
 
     # ── ML Models ──
     NOSE_DETECTOR_MODEL_PATH: str = "models/nose_detector.onnx"

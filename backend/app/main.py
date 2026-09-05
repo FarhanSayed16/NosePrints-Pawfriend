@@ -194,6 +194,7 @@ async def health_check():
         status=overall,
         version=settings.APP_VERSION,
         database=db_status,
+        storage=storage_service.mode,
         ml_models={
             "nose_detector_loaded": nose_detector.is_loaded,
             "nose_detector_file": detector_path.exists(),

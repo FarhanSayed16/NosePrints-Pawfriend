@@ -312,3 +312,4 @@ class HealthResponse(BaseModel):
     version: str
     database: str
     ml_models: dict[str, bool | str]
+    storage: str = "local"

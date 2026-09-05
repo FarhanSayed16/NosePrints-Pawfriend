@@ -20,3 +20,16 @@ def test_trusted_https_bucket_url():
         "http://s3.example/noseprints-photos/x.jpg",
         bucket="noseprints-photos",
     )
+
+
+def test_trusted_public_base_url():
+    assert is_trusted_media_url(
+        "https://pub-abc.r2.dev/nose-prints/x.jpg",
+        bucket="noseprints-photos",
+        public_base="https://pub-abc.r2.dev",
+    )
+    assert not is_trusted_media_url(
+        "https://other.example/nose-prints/x.jpg",
+        bucket="noseprints-photos",
+        public_base="https://pub-abc.r2.dev",
+    )
