@@ -52,6 +52,24 @@
   aspect-ratio: 4/3;
 }
 
+.camera-manual-hint {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 4.75rem;
+  z-index: 2;
+  margin: 0;
+  padding: 0.4rem 0.65rem;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+  line-height: 1.35;
+}
+
 .camera-video {
   display: block;
   position: relative;

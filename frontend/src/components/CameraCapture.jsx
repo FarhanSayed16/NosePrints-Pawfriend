@@ -33,12 +33,17 @@ function analyzeFrame(video) {
   return { sharpness: acc / Math.max(1, n), brightness };
 }
 
+/** Client-side blur/brightness only — never used to auto-shutter (no nose ML in-browser). */
+const SHARPNESS_OK = 80;
+const BRIGHTNESS_MIN = 50;
+const BRIGHTNESS_MAX = 210;
+
 function hintFromStats(stats) {
-  if (!stats) return "Nose in the circle — leave a little muzzle around it";
-  if (stats.brightness < 45) return "Too dark — add light";
-  if (stats.brightness > 220) return "Too bright — reduce glare";
-  if (stats.sharpness < 35) return "Hold steady — image is blurry";
-  return "Looks good — hold still";
+  if (!stats) return "Fill the circle with the nose, then tap the shutter";
+  if (stats.brightness < BRIGHTNESS_MIN) return "Too dark — add light";
+  if (stats.brightness > BRIGHTNESS_MAX) return "Too bright — reduce glare";
+  if (stats.sharpness < SHARPNESS_OK) return "Hold steady — image is blurry";
+  return "Looks sharp — tap the shutter when the nose fills the circle";
 }
 
 export default function CameraCapture({ onCapture, mode = "single", showFilePicker = true }) {
@@ -46,14 +51,13 @@ export default function CameraCapture({ onCapture, mode = "single", showFilePick
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const onCaptureRef = useRef(onCapture);
-  const goodStreakRef = useRef(0);
   const capturingRef = useRef(false);
 
   const [isActive, setIsActive] = useState(false);
   const [capturedImages, setCapturedImages] = useState([]);
   const [error, setError] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
-  const [hint, setHint] = useState("Nose in the circle — leave a little muzzle around it");
+  const [hint, setHint] = useState("Fill the circle with the nose, then tap the shutter");
   const [qualityOk, setQualityOk] = useState(false);
 
   const maxPhotos = mode === "multi" ? 5 : 1;
@@ -67,7 +71,6 @@ export default function CameraCapture({ onCapture, mode = "single", showFilePick
     try {
       setError(null);
       capturingRef.current = false;
-      goodStreakRef.current = 0;
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Camera API not available. Use HTTPS and a current browser.");
       }
@@ -204,29 +207,26 @@ export default function CameraCapture({ onCapture, mode = "single", showFilePick
     }
   };
 
+  // Quality hints only — never auto-capture. A laptop screen or random sharp frame
+  // used to trip shutter after ~0.6–2s; user must tap the shutter deliberately.
   useEffect(() => {
     if (!isActive) return undefined;
     const id = setInterval(() => {
       const video = videoRef.current;
       if (!video || video.readyState < 2) return;
       const stats = analyzeFrame(video);
-      const nextHint = hintFromStats(stats);
-      setHint(nextHint);
-      const ok = Boolean(
-        stats && stats.sharpness >= 35 && stats.brightness >= 45 && stats.brightness <= 220
+      setHint(hintFromStats(stats));
+      setQualityOk(
+        Boolean(
+          stats &&
+            stats.sharpness >= SHARPNESS_OK &&
+            stats.brightness >= BRIGHTNESS_MIN &&
+            stats.brightness <= BRIGHTNESS_MAX
+        )
       );
-      setQualityOk(ok);
-      if (ok) {
-        goodStreakRef.current += 1;
-        if (goodStreakRef.current >= 3 && mode === "single") {
-          captureFrame();
-        }
-      } else {
-        goodStreakRef.current = 0;
-      }
-    }, 200);
+    }, 250);
     return () => clearInterval(id);
-  }, [isActive, mode, captureFrame]);
+  }, [isActive]);
 
   useEffect(() => {
     if (isActive) {
@@ -259,7 +259,7 @@ export default function CameraCapture({ onCapture, mode = "single", showFilePick
             <Icon name="camera" size={32} />
           </div>
           <h3>Open Camera</h3>
-          <p>Tap to start scanning the dog's nose</p>
+          <p>Tap to open the camera — you take the photo when ready</p>
         </div>
       )}
 
@@ -280,11 +280,18 @@ export default function CameraCapture({ onCapture, mode = "single", showFilePick
             </div>
             <div className="scan-line"></div>
           </div>
+          <p className="camera-manual-hint">No auto-capture — tap the shutter when the nose fills the circle</p>
           <div className="camera-controls">
             <button className="btn btn-outline btn-sm" type="button" onClick={toggleCamera}>
               <Icon name="refresh" size={14} /> Flip
             </button>
-            <button className="capture-btn" type="button" onClick={captureFrame}>
+            <button
+              className="capture-btn"
+              type="button"
+              onClick={captureFrame}
+              aria-label="Take nose photo"
+              title="Take photo"
+            >
               <span className="capture-ring"></span>
             </button>
             <button className="btn btn-outline btn-sm" type="button" onClick={stopCamera}>

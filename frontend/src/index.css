@@ -156,6 +156,10 @@ a:hover {
   box-shadow: var(--shadow-sm);
   transition: transform var(--transition-base),
     box-shadow var(--transition-base);
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 
 .glass-card:hover {
@@ -304,6 +308,8 @@ textarea.form-input {
   flex: 1;
   min-width: 0;
   max-width: 100%;
+  width: 100%;
+  overflow-x: clip;
   padding-bottom: 5.5rem;
 }
 
@@ -313,6 +319,8 @@ textarea.form-input {
   margin-bottom: 2rem;
   background: linear-gradient(180deg, #e8f4fa 0%, var(--clr-bg) 100%);
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   position: relative;
 }
 

@@ -6,8 +6,13 @@ import "./index.css";
 async function setupServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
 
-  // Vite tunnel/dev: an installed SW caches /src/*.jsx and the phone never sees new code.
-  if (import.meta.env.DEV) {
+  // Dev + tunnel preview: an installed SW caches old bundles so phones never see fixes.
+  const disableSw =
+    import.meta.env.DEV ||
+    import.meta.env.VITE_DISABLE_SW === "1" ||
+    import.meta.env.MODE === "tunnel";
+
+  if (disableSw) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
     if (window.caches) {

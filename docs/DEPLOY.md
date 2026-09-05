@@ -1,5 +1,8 @@
 # NosePrints — standalone free deployment guide
 
+**Final Phase A plan (senior-ready overview):** [`PHASE_A_DEPLOYMENT.md`](./PHASE_A_DEPLOYMENT.md)  
+This file is the click-by-click companion to that plan.
+
 Follow this **in order**. Do not skip steps.  
 This deploys **this project only** (its own HTTPS URL). PawFriend.in comes later.
 
