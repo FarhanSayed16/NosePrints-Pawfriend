@@ -1,0 +1,43 @@
+.processing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(26, 43, 60, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.processing-card {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+  padding: 1.5rem 1.25rem !important;
+  box-shadow: var(--shadow-lg);
+}
+
+.processing-preview {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin: 0 auto 1rem;
+  display: block;
+  border: 2px solid var(--clr-primary-100);
+}
+
+.processing-title {
+  font-weight: 700;
+  color: var(--clr-text);
+  margin-bottom: 0.35rem;
+  font-size: 1rem;
+}
+
+.processing-detail {
+  color: var(--clr-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0;
+}

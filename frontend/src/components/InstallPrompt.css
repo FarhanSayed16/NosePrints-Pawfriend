@@ -15,6 +15,20 @@
   animation: slideUp 0.3s ease-out;
   /* Safe area for notched phones */
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  max-width: 100vw;
+  box-sizing: border-box;
+  overflow-x: clip;
+}
+
+@media (max-width: 420px) {
+  .install-banner {
+    flex-wrap: wrap;
+  }
+
+  .install-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 @keyframes slideUp {

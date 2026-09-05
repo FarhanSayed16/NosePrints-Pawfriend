@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { toJpegFile } from "../utils/imageFile";
 import "./NoseCropEditor.css";
 
-const MIN_NORM = 0.06;
-const MIN_PX = 160;
+const MIN_NORM = 0.04;
+const MIN_PX_SOFT = 96;
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+const NUDGE = 0.012;
 
 function defaultBox() {
-  return { x1: 0.32, y1: 0.32, x2: 0.68, y2: 0.68 };
+  return { x1: 0.28, y1: 0.28, x2: 0.72, y2: 0.72 };
 }
 
 function clampBox(next) {
@@ -20,10 +21,14 @@ function clampBox(next) {
 
 export default function NoseCropEditor({ imageUrl, initialBox, message, onConfirm, onCancel }) {
   const imgRef = useRef(null);
+  const stageRef = useRef(null);
   const [box, setBox] = useState(initialBox || defaultBox());
   const [preview, setPreview] = useState(null);
   const [warn, setWarn] = useState("");
   const dragRef = useRef(null);
+  const pinchRef = useRef(null);
+  const boxRef = useRef(box);
+  boxRef.current = box;
 
   useEffect(() => {
     setBox(initialBox || defaultBox());
@@ -81,19 +86,77 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
   };
 
   const scaleBox = (factor) => {
-    const cx = (box.x1 + box.x2) / 2;
-    const cy = (box.y1 + box.y2) / 2;
-    const w = Math.max(MIN_NORM, (box.x2 - box.x1) * factor);
-    const h = Math.max(MIN_NORM, (box.y2 - box.y1) * factor);
-    setBox(
-      clampBox({
+    setBox((current) => {
+      const cx = (current.x1 + current.x2) / 2;
+      const cy = (current.y1 + current.y2) / 2;
+      const w = Math.max(MIN_NORM, (current.x2 - current.x1) * factor);
+      const h = Math.max(MIN_NORM, (current.y2 - current.y1) * factor);
+      return clampBox({
         x1: cx - w / 2,
         y1: cy - h / 2,
         x2: cx + w / 2,
         y2: cy + h / 2,
-      })
-    );
+      });
+    });
   };
+
+  const nudge = (dx, dy) => {
+    setBox((current) => applyHandle(current, "move", dx, dy));
+  };
+
+  // Two-finger pinch to resize the crop box on phones
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+
+    const distance = (t1, t2) => {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.hypot(dx, dy);
+    };
+
+    const onTouchStart = (ev) => {
+      if (ev.touches.length === 2) {
+        pinchRef.current = {
+          startDist: distance(ev.touches[0], ev.touches[1]),
+          orig: { ...boxRef.current },
+        };
+      }
+    };
+    const onTouchMove = (ev) => {
+      if (ev.touches.length !== 2 || !pinchRef.current) return;
+      ev.preventDefault();
+      const { startDist, orig } = pinchRef.current;
+      if (startDist < 1) return;
+      const factor = distance(ev.touches[0], ev.touches[1]) / startDist;
+      const cx = (orig.x1 + orig.x2) / 2;
+      const cy = (orig.y1 + orig.y2) / 2;
+      const w = Math.max(MIN_NORM, (orig.x2 - orig.x1) * factor);
+      const h = Math.max(MIN_NORM, (orig.y2 - orig.y1) * factor);
+      setBox(
+        clampBox({
+          x1: cx - w / 2,
+          y1: cy - h / 2,
+          x2: cx + w / 2,
+          y2: cy + h / 2,
+        })
+      );
+    };
+    const onTouchEnd = () => {
+      pinchRef.current = null;
+    };
+
+    stage.addEventListener("touchstart", onTouchStart, { passive: true });
+    stage.addEventListener("touchmove", onTouchMove, { passive: false });
+    stage.addEventListener("touchend", onTouchEnd);
+    stage.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      stage.removeEventListener("touchstart", onTouchStart);
+      stage.removeEventListener("touchmove", onTouchMove);
+      stage.removeEventListener("touchend", onTouchEnd);
+      stage.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
 
   const cropPixels = () => {
     const img = imgRef.current;
@@ -116,8 +179,8 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
     const url = canvas.toDataURL("image/jpeg", 0.85);
     setPreview(url);
     setWarn(
-      Math.min(sw, sh) < MIN_PX
-        ? `This crop is only ${sw}×${sh} px. Pinch the handles inward onto the nose leather, or take a closer photo.`
+      Math.min(sw, sh) < MIN_PX_SOFT
+        ? `Crop is ${sw}×${sh} px — enlarge the box or move closer for a sharper match.`
         : ""
     );
     return undefined;
@@ -157,7 +220,10 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
       <p className="crop-msg">
         {message || "Drag the box onto the black nose leather. Leave a little muzzle, not the eyes."}
       </p>
-      <div className="crop-stage">
+      <p className="crop-hint-line">
+        Drag handles · pinch to resize · use buttons for fine moves
+      </p>
+      <div className="crop-stage" ref={stageRef}>
         <img
           ref={imgRef}
           src={imageUrl}
@@ -186,17 +252,41 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
 
       <div className="crop-nudge">
         <button className="btn btn-outline btn-sm" type="button" onClick={() => scaleBox(0.85)}>
-          Smaller box
+          Smaller
         </button>
         <button className="btn btn-outline btn-sm" type="button" onClick={() => scaleBox(1.15)}>
-          Larger box
+          Larger
+        </button>
+        <button
+          className="btn btn-outline btn-sm"
+          type="button"
+          onClick={() => setBox(initialBox || defaultBox())}
+        >
+          Reset box
+        </button>
+      </div>
+
+      <div className="crop-move" role="group" aria-label="Nudge crop box">
+        <button className="btn btn-outline btn-sm" type="button" onClick={() => nudge(0, -NUDGE)}>
+          ↑
+        </button>
+        <div className="crop-move-mid">
+          <button className="btn btn-outline btn-sm" type="button" onClick={() => nudge(-NUDGE, 0)}>
+            ←
+          </button>
+          <button className="btn btn-outline btn-sm" type="button" onClick={() => nudge(NUDGE, 0)}>
+            →
+          </button>
+        </div>
+        <button className="btn btn-outline btn-sm" type="button" onClick={() => nudge(0, NUDGE)}>
+          ↓
         </button>
       </div>
 
       {preview && (
         <div className="crop-preview-row">
           <img src={preview} alt="Nose crop preview" />
-          <p>This is what will be saved. Tighten the box until it is mostly the nose.</p>
+          <p>Preview of what will be searched. Tighten until it is mostly nose leather.</p>
         </div>
       )}
       {warn && <p className="crop-warn">{warn}</p>}
@@ -205,7 +295,7 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
         <button className="btn btn-outline" type="button" onClick={onCancel}>
           Choose another
         </button>
-        <button className="btn btn-primary" type="button" onClick={confirm} disabled={Boolean(warn)}>
+        <button className="btn btn-primary" type="button" onClick={confirm}>
           Use this nose crop
         </button>
       </div>

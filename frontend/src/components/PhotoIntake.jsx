@@ -160,8 +160,13 @@ export default function PhotoIntake({ onCapture, mode = "single" }) {
 
       {phase === PHASE.IDLE && tab === "camera" && (
         <CameraCapture
-          onCapture={(blobs) => emit(blobs, false)}
-          mode={mode}
+          onCapture={(blobs) => {
+            // Always open the crop editor (same as gallery). Never accept a raw
+            // camera frame as the final nose print — auto-shutter used to skip this.
+            const file = Array.isArray(blobs) ? blobs[0] : blobs;
+            if (file) openCrop(file);
+          }}
+          mode="single"
           showFilePicker={false}
         />
       )}
