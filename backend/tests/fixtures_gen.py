@@ -73,16 +73,57 @@ def _maybe_write(path: Path | None, img: np.ndarray) -> bytes:
     return data
 
 
+def make_fabric_pattern(path: Path | None = None, size: int = 256) -> bytes:
+    """Multi-colour triangle blanket — high colorfulness / hue spread."""
+    img = np.full((size, size, 3), 220, dtype=np.uint8)
+    colors = [
+        (40, 90, 220),   # blue-ish
+        (40, 200, 220),  # yellow
+        (60, 40, 200),   # red
+        (180, 80, 40),   # teal
+    ]
+    step = size // 4
+    for yi, y in enumerate(range(0, size, step)):
+        for xi, x in enumerate(range(0, size, step)):
+            c = colors[(yi + xi) % len(colors)]
+            pts = np.array(
+                [[x, y], [x + step, y], [x + step // 2, y + step]],
+                dtype=np.int32,
+            )
+            cv2.fillConvexPoly(img, pts, c)
+            cv2.rectangle(img, (x, y), (x + step - 1, y + step - 1), (30, 30, 30), 1)
+    return _maybe_write(path, img)
+
+
+def make_fur_like(path: Path | None = None, size: int = 256) -> bytes:
+    """Uniform mid-tone fur texture — no dark/pink leather center (body/back shot)."""
+    rng = np.random.default_rng(7)
+    base = np.full((size, size, 3), (118, 128, 138), dtype=np.uint8)
+    noise = rng.integers(0, 28, (size, size, 3), dtype=np.uint8)
+    img = cv2.add(base, noise)
+    # Fine isotropic speckles (fur), not a dark ellipse
+    for _ in range(400):
+        x = int(rng.integers(0, size))
+        y = int(rng.integers(0, size))
+        shade = int(rng.integers(90, 150))
+        cv2.circle(img, (x, y), 1, (shade, shade + 5, shade + 10), -1)
+    return _maybe_write(path, img)
+
+
 def ensure_fixtures() -> dict[str, Path]:
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     paths = {
         "keyboard": FIXTURE_DIR / "keyboard.jpg",
         "blank_wall": FIXTURE_DIR / "blank_wall.jpg",
         "nose_like": FIXTURE_DIR / "nose_like.jpg",
+        "fabric": FIXTURE_DIR / "fabric.jpg",
+        "fur_like": FIXTURE_DIR / "fur_like.jpg",
     }
     make_keyboard(paths["keyboard"])
     make_blank_wall(paths["blank_wall"])
     make_nose_like(paths["nose_like"])
+    make_fabric_pattern(paths["fabric"])
+    make_fur_like(paths["fur_like"])
     return paths
 
 

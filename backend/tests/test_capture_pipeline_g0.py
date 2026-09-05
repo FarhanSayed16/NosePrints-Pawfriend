@@ -49,6 +49,61 @@ def test_low_confidence_rejected():
             assert "uncertain" in exc.value.detail["message"].lower()
 
 
+def test_full_frame_bbox_rejected_on_scene_photo():
+    """YOLO false hit covering almost the whole *scene* photo must 422."""
+    frame = _bgr(894, 1200, 90)
+    detection = DetectionResult(
+        original=frame,
+        crop=frame.copy(),
+        bbox=(0, 0, 1200, 894),
+        confidence=0.692,
+    )
+    with (
+        patch("app.services.capture_pipeline.nose_detector") as det,
+        patch("app.services.capture_pipeline.settings.DETECTOR_MIN_ACCEPT_CONF", 0.40),
+        patch("app.services.capture_pipeline.settings.NOSE_MAX_BBOX_FRAME_FRACTION", 0.85),
+        patch("app.services.capture_pipeline.settings.NOSE_REDETECT_ON_CROP", False),
+    ):
+        det.is_loaded = True
+        det.detect.return_value = detection
+        with pytest.raises(HTTPException) as exc:
+            prepare_nose_scan(b"fake", pre_cropped=False)
+        assert exc.value.status_code == 422
+        detail = exc.value.detail
+        joined = str(detail).lower()
+        assert "whole photo" in joined or "almost" in joined or "usable" in joined
+
+
+def test_pre_cropped_full_canvas_bbox_not_rejected_by_frame_rule():
+    """Tight client crop: detector filling the crop canvas must not trip full-frame reject."""
+    crop = _bgr(200, 200, 90)
+    detection = DetectionResult(
+        original=crop,
+        crop=crop.copy(),
+        bbox=(0, 0, 200, 200),
+        confidence=0.72,
+    )
+    passed = QualityCheckResult(
+        passed=True,
+        sharpness_score=200.0,
+        brightness_score=90.0,
+        nose_coverage=0.5,
+        issues=[],
+    )
+    with (
+        patch("app.services.capture_pipeline.nose_detector") as det,
+        patch("app.services.capture_pipeline.assess_crop_quality", return_value=passed),
+        patch("app.services.capture_pipeline.assess_nose_crop_heuristics", return_value=_pass_heuristics()),
+        patch("app.services.capture_pipeline.settings.DETECTOR_MIN_ACCEPT_CONF", 0.40),
+        patch("app.services.capture_pipeline.settings.NOSE_REDETECT_ON_CROP", True),
+        patch("app.services.capture_pipeline._redetect_on_crop", return_value=detection),
+    ):
+        det.is_loaded = True
+        det.detect.return_value = detection
+        scan = prepare_nose_scan(b"fake", pre_cropped=True)
+        assert scan.crop is not None
+
+
 def test_strong_detection_passes_gate():
     crop = _bgr(80, 80, 90)
     # Make crop look nose-like enough for heuristics

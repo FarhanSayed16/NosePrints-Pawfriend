@@ -1,8 +1,10 @@
 # Capture UX — phone overflow, crop, Look step, image accept
 
-**Date:** 18 August 2026  
-**Status:** Plan for the phone registration bugs seen on `noseprints.farhanbuilds.in`  
+**Date:** 18 August 2026 (updated 5 September 2026)  
+**Status:** Historical plan + **Capture UX + Detection Fix** follow-on shipped  
 **Scope:** Register Look + Nose steps, Identify appearance photo, quality gate. Not a new biometric.
+
+September 2026 follow-on (see also [`G0_G3_AUDIT_FIXES.md`](./G0_G3_AUDIT_FIXES.md)): full-frame bbox only on scene photos; honest detect-preview; Look never “Photo ready” until Use anyway; stage-first crop editor (~18px corner handles); parallel convert+detect; Staff purge still required for junk dogs.
 
 If this file conflicts with `docs/MASTER_PLAN.md` on identity rules, follow the master plan. Coat/body photos stay a staff check, not a second biometric.
 

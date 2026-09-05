@@ -59,7 +59,17 @@ class PreparedScan:
     quality: QualityCheckResult
 
 
-def _require_detection(detection: DetectionResult) -> None:
+def _require_detection(
+    detection: DetectionResult,
+    *,
+    reject_full_frame: bool = False,
+) -> None:
+    """
+    Require a usable YOLO hit.
+
+    reject_full_frame: only for the first pass on a full scene photo.
+    Do NOT use on client crops / re-detect — a tight nose crop often fills most of the canvas.
+    """
     if detection.bbox is None or detection.crop is None or detection.crop.size == 0:
         raise HTTPException(status_code=422, detail=NO_NOSE_DETAIL)
 
@@ -74,6 +84,27 @@ def _require_detection(detection: DetectionResult) -> None:
             "scores": {"detector_confidence": round(float(detection.confidence), 4)},
         }
         raise HTTPException(status_code=422, detail=detail)
+
+    if reject_full_frame:
+        x1, y1, x2, y2 = detection.bbox
+        oh, ow = detection.original.shape[:2]
+        frac = (max(0, x2 - x1) * max(0, y2 - y1)) / max(1, ow * oh)
+        if frac > settings.NOSE_MAX_BBOX_FRAME_FRACTION:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    **HEURISTIC_DETAIL,
+                    "message": "No clear nose crop — detection covered almost the whole photo",
+                    "issues": [
+                        "Detected region covers almost the whole photo — tighten the box on the nose leather only.",
+                        "Do not upload keyboards, laptop screens, or room photos as nose prints.",
+                    ],
+                    "scores": {
+                        "detector_confidence": round(float(detection.confidence), 4),
+                        "bbox_frame_fraction": round(frac, 4),
+                    },
+                },
+            )
 
 
 def _redetect_on_crop(crop_bgr: np.ndarray) -> DetectionResult:
@@ -114,7 +145,32 @@ def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> Prepa
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    _require_detection(detection)
+    # Client already framed the nose: if YOLO misses on a tight leather crop,
+    # soft-accept only when heuristics clearly look like nose leather (not fur/fabric).
+    if (
+        pre_cropped
+        and (detection.bbox is None or detection.crop is None or detection.crop.size == 0)
+    ):
+        full = detection.original
+        fh, fw = full.shape[:2]
+        provisional = assess_nose_crop_heuristics(full, pre_cropped=True)
+        likeness = float(provisional.scores.get("nose_likeness", 0.0))
+        if (
+            provisional.passed
+            and min(fh, fw) >= 64
+            and likeness >= settings.NOSE_SOFT_MISS_MIN_LIKENESS
+        ):
+            detection = DetectionResult(
+                original=full,
+                crop=full.copy(),
+                bbox=(0, 0, fw, fh),
+                confidence=max(float(detection.confidence), settings.DETECTOR_MIN_ACCEPT_CONF),
+            )
+        else:
+            raise HTTPException(status_code=422, detail=NO_NOSE_DETAIL)
+
+    # Full-frame reject only on uncropped scene photos — never on client crops
+    _require_detection(detection, reject_full_frame=not pre_cropped)
 
     orig_h, orig_w = detection.original.shape[:2]
     crop = detection.crop
@@ -129,19 +185,37 @@ def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> Prepa
             second = _redetect_on_crop(crop)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        _require_detection(second)
-        # Prefer the tighter crop from the second pass when it exists
-        crop = second.crop
-        confidence = min(confidence, float(second.confidence))
-        if pre_cropped:
-            # bbox is relative to the client crop / second original
-            ch, cw = second.original.shape[:2]
-            bbox = second.bbox
-            orig_h, orig_w = ch, cw
+
+        second_ok = (
+            second.bbox is not None
+            and second.crop is not None
+            and second.crop.size > 0
+            and float(second.confidence) >= settings.DETECTOR_MIN_ACCEPT_CONF
+        )
+
+        if second_ok:
+            # Prefer the tighter crop from the second pass when it exists
+            crop = second.crop
+            confidence = min(confidence, float(second.confidence))
+            if pre_cropped:
+                ch, cw = second.original.shape[:2]
+                bbox = second.bbox
+                orig_h, orig_w = ch, cw
+        elif pre_cropped and settings.NOSE_REDETECT_SOFT_FALLBACK:
+            # Tight real-nose crops often confuse a second YOLO pass — keep first
+            # only when likeness is clearly nose-like (blocks fur/blanket soft-pass).
+            fallback = assess_nose_crop_heuristics(
+                crop, bbox=bbox, frame_w=orig_w, frame_h=orig_h, pre_cropped=True
+            )
+            likeness = float(fallback.scores.get("nose_likeness", 0.0))
+            if (
+                not fallback.passed
+                or likeness < settings.NOSE_REDETECT_SOFT_MIN_LIKENESS
+            ):
+                raise HTTPException(status_code=422, detail=NO_NOSE_DETAIL)
+            # keep first-pass crop / bbox / confidence
         else:
-            # Map second bbox is in crop-local coords; keep first-pass bbox in full frame
-            # for coverage checks, but use second crop pixels for embedding.
-            pass
+            _require_detection(second, reject_full_frame=False)
 
     quality = assess_crop_quality(
         crop,

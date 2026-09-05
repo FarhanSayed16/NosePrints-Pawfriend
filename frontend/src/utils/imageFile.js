@@ -4,7 +4,11 @@ export const MAX_UPLOAD_EDGE = 1600;
 /**
  * Decode, resize if needed, and return a named JPEG File for API upload.
  */
-export async function toJpegFile(input, filename = "photo.jpg", { maxEdge = MAX_UPLOAD_EDGE } = {}) {
+export async function toJpegFile(
+  input,
+  filename = "photo.jpg",
+  { maxEdge = MAX_UPLOAD_EDGE, quality = 0.88 } = {},
+) {
   if (!input) return null;
 
   const bitmap = await decodeBitmap(input);
@@ -27,10 +31,16 @@ export async function toJpegFile(input, filename = "photo.jpg", { maxEdge = MAX_
     canvas.toBlob(
       (out) => (out ? resolve(out) : reject(new Error("Could not encode JPEG"))),
       "image/jpeg",
-      0.88
+      quality,
     );
   });
   return new File([blob], filename, { type: "image/jpeg" });
+}
+
+/** Stable-enough key for caching quality-check results on the same blob. */
+export function blobCacheKey(blob) {
+  if (!blob) return "";
+  return `${blob.size}:${blob.type || ""}:${blob.name || ""}:${blob.lastModified || 0}`;
 }
 
 async function decodeBitmap(blob) {

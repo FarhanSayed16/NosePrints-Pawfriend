@@ -93,10 +93,13 @@ export const uploadNosePrint = (dogId, file, { preCropped = false } = {}) => {
   });
 };
 
-export const checkImageQuality = (file) => {
+export const checkImageQuality = (file, { preCropped = false } = {}) => {
   const formData = new FormData();
-  formData.append("file", file);
-  return api.post("/noseprints/quality-check", formData);
+  const named = file instanceof File ? file : new File([file], "nose.jpg", { type: file.type || "image/jpeg" });
+  formData.append("file", named, named.name || "nose.jpg");
+  return api.post("/noseprints/quality-check", formData, {
+    params: { pre_cropped: preCropped },
+  });
 };
 
 export const getNosePrints = (dogId) => api.get(`/noseprints/${dogId}`);

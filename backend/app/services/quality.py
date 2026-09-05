@@ -28,11 +28,16 @@ def assess_crop_quality(
     """Quality gate for a detected nose crop."""
     issues: list[str] = []
     sharpness_score, brightness_score = _scores_from_bgr(crop_bgr)
+    min_sharp = (
+        settings.MIN_SHARPNESS_SCORE
+        if check_coverage
+        else settings.MIN_SHARPNESS_SCORE_CROP
+    )
 
-    if sharpness_score < settings.MIN_SHARPNESS_SCORE:
+    if sharpness_score < min_sharp:
         issues.append(
             f"Nose crop too blurry (sharpness: {sharpness_score:.1f}, "
-            f"minimum: {settings.MIN_SHARPNESS_SCORE}). Hold steady and get closer."
+            f"minimum: {min_sharp}). Hold steady and get closer to the nose leather."
         )
 
     if brightness_score < settings.MIN_BRIGHTNESS:

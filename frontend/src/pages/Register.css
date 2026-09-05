@@ -153,8 +153,25 @@
   display: flex;
   gap: 0.75rem;
   margin-top: 1rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
+  align-items: stretch;
+}
+
+/* Single horizontal Back | Skip | Next — no sticky overlap */
+.look-step-actions {
+  position: static;
+  margin-top: 1rem;
+  padding: 0;
+  background: none;
+}
+
+.look-step-actions .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  font-size: 0.92rem;
 }
 
 .form-actions .btn {
@@ -182,6 +199,39 @@
   margin-bottom: 1.25rem;
 }
 
+.scan-instructions-compact {
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.scan-tip-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.scan-tip-one {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--clr-text-secondary);
+  line-height: 1.35;
+  flex: 1;
+  min-width: 0;
+}
+
+.tip-toggle,
+.btn-text {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--clr-primary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.15rem 0;
+}
+
 .scan-instructions h3 {
   margin-bottom: 0.6rem;
 }
@@ -189,12 +239,22 @@
 .instruction-list {
   list-style: none;
   padding: 0;
+  margin: 0.65rem 0 0;
 }
 
 .instruction-list li {
-  padding: 0.25rem 0;
+  padding: 0.35rem 0 0.35rem 1rem;
   color: var(--clr-text-secondary);
   font-size: 0.9rem;
+  position: relative;
+}
+
+.instruction-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--clr-primary);
+  font-weight: 700;
 }
 
 .instruction-list li::before {
@@ -306,9 +366,30 @@
     align-items: stretch;
   }
 
+  .look-step-actions {
+    flex-direction: row;
+    flex-wrap: nowrap;
+  }
+
+  .look-step-actions .btn {
+    width: auto;
+    flex: 1 1 0;
+    white-space: nowrap;
+    font-size: 0.85rem;
+  }
+
   .form-actions .btn,
   .form-actions .btn-lg {
     width: 100%;
     white-space: normal;
+  }
+
+  .progress-steps {
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+  }
+
+  .nose-scan-section {
+    padding-bottom: 0.5rem;
   }
 }

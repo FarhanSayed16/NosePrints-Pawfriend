@@ -39,14 +39,20 @@ const BRIGHTNESS_MIN = 50;
 const BRIGHTNESS_MAX = 210;
 
 function hintFromStats(stats) {
-  if (!stats) return "Fill the circle with the nose, then tap the shutter";
-  if (stats.brightness < BRIGHTNESS_MIN) return "Too dark — add light";
-  if (stats.brightness > BRIGHTNESS_MAX) return "Too bright — reduce glare";
+  // Blur/brightness only — never claim a nose was found (server checks after crop).
+  if (!stats) return "Fill the circle with the nose leather, then tap shutter";
+  if (stats.brightness < BRIGHTNESS_MIN) return "Too dark — add light on the nose";
+  if (stats.brightness > BRIGHTNESS_MAX) return "Too bright — reduce glare on the nose";
   if (stats.sharpness < SHARPNESS_OK) return "Hold steady — image is blurry";
-  return "Looks sharp — tap the shutter when the nose fills the circle";
+  return "Focus OK — fill the circle with the nose (not fur or body), then tap shutter";
 }
 
-export default function CameraCapture({ onCapture, mode = "single", showFilePicker = true }) {
+export default function CameraCapture({
+  onCapture,
+  mode = "single",
+  showFilePicker = true,
+  autoStart = false,
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -239,6 +245,14 @@ export default function CameraCapture({ onCapture, mode = "single", showFilePick
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
+  // One entry: Camera tab opens live view (permission still requires user gesture on some browsers)
+  useEffect(() => {
+    if (autoStart && !isActive && !error && capturedImages.length === 0) {
+      startCamera();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
   return (
     <div className="camera-capture">
       {error && (
@@ -258,8 +272,8 @@ export default function CameraCapture({ onCapture, mode = "single", showFilePick
           <div className="camera-start-icon">
             <Icon name="camera" size={32} />
           </div>
-          <h3>Open Camera</h3>
-          <p>Tap to open the camera — you take the photo when ready</p>
+          <h3>{autoStart ? "Starting camera…" : "Open camera"}</h3>
+          <p>Tap if the live view does not open — you take the photo when ready</p>
         </div>
       )}
 
@@ -275,12 +289,10 @@ export default function CameraCapture({ onCapture, mode = "single", showFilePick
           />
           <div className="camera-overlay">
             <div className="nose-guide">
-              <div className={`guide-circle ${qualityOk ? "guide-ok" : ""}`}></div>
-              <p className={`guide-text ${qualityOk ? "hint-ok" : ""}`}>{hint}</p>
+              <div className={`guide-circle ${qualityOk ? "guide-focus-ok" : ""}`}></div>
+              <p className={`guide-text ${qualityOk ? "hint-focus-ok" : ""}`}>{hint}</p>
             </div>
-            <div className="scan-line"></div>
           </div>
-          <p className="camera-manual-hint">No auto-capture — tap the shutter when the nose fills the circle</p>
           <div className="camera-controls">
             <button className="btn btn-outline btn-sm" type="button" onClick={toggleCamera}>
               <Icon name="refresh" size={14} /> Flip

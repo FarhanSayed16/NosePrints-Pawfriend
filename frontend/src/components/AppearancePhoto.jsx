@@ -37,15 +37,22 @@ export default function AppearancePhoto({
     onPreview?.(null);
   };
 
-  const commitFile = (jpeg, { force = false } = {}) => {
-    if (preview && preview.startsWith("blob:")) URL.revokeObjectURL(preview);
-    const url = URL.createObjectURL(jpeg);
+  const setPreviewUrl = (url) => {
+    if (preview && preview.startsWith("blob:") && preview !== url) {
+      URL.revokeObjectURL(preview);
+    }
     setPreview(url);
+  };
+
+  const commitFile = (jpeg, { force = false } = {}) => {
+    const url = URL.createObjectURL(jpeg);
+    setPreviewUrl(url);
     onPreview?.(url);
     onFile?.(jpeg, { force });
     setSaved(true);
     setPendingFile(null);
     setSoftWarn(null);
+    setError(null);
   };
 
   const applyFile = async (file) => {
@@ -53,9 +60,8 @@ export default function AppearancePhoto({
     setError(null);
     setSoftWarn(null);
     setPendingFile(null);
-    setBusy(true);
     setSaved(false);
-    // P1.2: clear parent immediately so Search/Next cannot upload a stale prior file
+    setBusy(true);
     clearParentFile();
     try {
       const jpeg = await toJpegFile(file, "dog-look.jpg");
@@ -67,22 +73,25 @@ export default function AppearancePhoto({
       const data = res.data;
       if (!data.ok) {
         setError(data.message || data.issues?.[0] || "This photo was rejected.");
-        if (preview && preview.startsWith("blob:")) URL.revokeObjectURL(preview);
-        setPreview(null);
+        setPreviewUrl(null);
         return;
       }
+      // Always show preview for soft_warn, but never mark ready / commit until Use anyway
+      const url = URL.createObjectURL(jpeg);
+      setPreviewUrl(url);
       if (data.soft_warn) {
         setPendingFile(jpeg);
         setSoftWarn(data.message || data.issues?.[0] || "Are you sure this is a dog photo?");
-        if (preview && preview.startsWith("blob:")) URL.revokeObjectURL(preview);
-        setPreview(URL.createObjectURL(jpeg));
         return;
       }
-      commitFile(jpeg, { force: false });
+      onPreview?.(url);
+      onFile?.(jpeg, { force: false });
+      setSaved(true);
+      setPendingFile(null);
+      setSoftWarn(null);
     } catch (err) {
       setError(formatApiError(err, err.message || "Could not read that photo."));
-      if (preview && preview.startsWith("blob:")) URL.revokeObjectURL(preview);
-      setPreview(null);
+      setPreviewUrl(null);
     } finally {
       setBusy(false);
     }
@@ -92,6 +101,14 @@ export default function AppearancePhoto({
     const file = event.target.files?.[0];
     event.target.value = "";
     applyFile(file);
+  };
+
+  const clearAll = () => {
+    setSoftWarn(null);
+    setPendingFile(null);
+    setSaved(false);
+    setPreviewUrl(null);
+    clearParentFile();
   };
 
   return (
@@ -117,7 +134,9 @@ export default function AppearancePhoto({
       {softWarn && (
         <div className="appearance-soft-warn">
           <p><Icon name="alertCircle" size={16} /> {softWarn}</p>
-          <p className="appearance-soft-hint">Look photos are not biometric, but staff see them. Use a body or face shot of the dog when you can.</p>
+          <p className="appearance-soft-hint">
+            Look photos are not biometric, but staff see them. Prefer a body or face shot of the dog.
+          </p>
           <div className="appearance-actions">
             <button
               type="button"
@@ -126,17 +145,7 @@ export default function AppearancePhoto({
             >
               Use anyway
             </button>
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => {
-                setSoftWarn(null);
-                setPendingFile(null);
-                if (preview && preview.startsWith("blob:")) URL.revokeObjectURL(preview);
-                setPreview(null);
-                clearParentFile();
-              }}
-            >
+            <button type="button" className="btn btn-outline" onClick={clearAll}>
               Choose another
             </button>
           </div>
@@ -149,7 +158,7 @@ export default function AppearancePhoto({
 
       {error && <p className="appearance-error">{error}</p>}
 
-      {!softWarn && (
+      {!softWarn && !saved && (
         <div className="appearance-actions">
           <label className={`btn btn-primary ${busy ? "disabled" : ""}`}>
             <input type="file" accept="image/*" capture="environment" onChange={onChange} hidden disabled={busy} />
@@ -158,6 +167,15 @@ export default function AppearancePhoto({
           <label className={`btn btn-outline ${busy ? "disabled" : ""}`}>
             <input type="file" accept="image/*" onChange={onChange} hidden disabled={busy} />
             <Icon name="clipboard" size={16} /> Choose from gallery
+          </label>
+        </div>
+      )}
+
+      {!softWarn && saved && (
+        <div className="appearance-actions">
+          <label className={`btn btn-outline ${busy ? "disabled" : ""}`}>
+            <input type="file" accept="image/*" onChange={onChange} hidden disabled={busy} />
+            <Icon name="clipboard" size={16} /> Change photo
           </label>
         </div>
       )}

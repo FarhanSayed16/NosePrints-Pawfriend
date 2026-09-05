@@ -21,6 +21,8 @@ export default function Register() {
   const [uploadPhase, setUploadPhase] = useState("");
   const [appearanceFile, setAppearanceFile] = useState(null);
   const [lookForce, setLookForce] = useState(false);
+  const [noseCropping, setNoseCropping] = useState(false);
+  const [showNoseTips, setShowNoseTips] = useState(false);
 
   const handleOwnerSubmit = (e) => {
     e.preventDefault();
@@ -225,7 +227,7 @@ export default function Register() {
 
         {/* Step 3: Full dog photo */}
         {step === 3 && (
-          <div className="nose-scan-section animate-fade-in">
+          <div className="nose-scan-section look-step animate-fade-in">
             {loading && (
               <div className="upload-progress glass-card">
                 <div className="progress-spinner"></div>
@@ -236,7 +238,7 @@ export default function Register() {
               <>
             <AppearancePhoto
               title="Full dog photo"
-              help="A body or face photo helps staff confirm the dog later. This is not the nose print — that comes next. Use Take photo or Choose from gallery."
+              help="Body or face shot helps staff later — not the nose print. Take photo or gallery."
               softGate
               readyLabel="Photo ready — will be saved with this dog"
               onFile={(file, meta = {}) => {
@@ -244,7 +246,7 @@ export default function Register() {
                 setLookForce(Boolean(meta.force));
               }}
             />
-            <div className="form-actions" style={{ marginTop: "1rem" }}>
+            <div className="form-actions look-step-actions">
               <button className="btn btn-outline" type="button" onClick={() => setStep(2)}>
                 <Icon name="arrowLeft" size={16} /> Back
               </button>
@@ -257,15 +259,15 @@ export default function Register() {
                   setStep(4);
                 }}
               >
-                Skip for now
+                Skip
               </button>
               <button
-                className="btn btn-primary btn-lg"
+                className="btn btn-primary"
                 type="button"
-                disabled={loading}
+                disabled={loading || !appearanceFile}
                 onClick={async () => {
                   if (!appearanceFile) {
-                    setStep(4);
+                    setError("Add a full-dog photo, or tap Skip.");
                     return;
                   }
                   setLoading(true);
@@ -285,7 +287,7 @@ export default function Register() {
                   }
                 }}
               >
-                Next → Nose print
+                Next
               </button>
             </div>
               </>
@@ -296,21 +298,39 @@ export default function Register() {
         {/* Step 4: Nose Scan */}
         {step === 4 && (
           <div className="nose-scan-section animate-fade-in">
-            <div className="glass-card scan-instructions">
-              <h3><Icon name="camera" size={20} style={{ marginRight: '0.4rem' }} /> Scan {dog.name || "the dog"}'s Nose</h3>
-              <ul className="instruction-list">
-                <li>Camera for a live close-up, or Gallery to pick a photo and crop the nose</li>
-                <li>Fit the box to the black nose leather — not the eyes or whole head</li>
-                <li>Hold 15–30 cm from the nose; a far-away body photo will be too blurry</li>
-                <li>Save 3–5 crops from slightly different angles</li>
-              </ul>
+            <div className="glass-card scan-instructions scan-instructions-compact">
+              <div className="scan-tip-row">
+                <p className="scan-tip-one">
+                  Close-up of the nose leather — drag a tight box, then confirm. Need 3 good crops.
+                </p>
+                <button
+                  type="button"
+                  className="btn-text tip-toggle"
+                  onClick={() => setShowNoseTips((v) => !v)}
+                >
+                  {showNoseTips ? "Hide tips" : "Tips"}
+                </button>
+              </div>
+              {showNoseTips && (
+                <ul className="instruction-list">
+                  <li>Use Camera or Gallery, then drag a tight box on the nose leather</li>
+                  <li>Hold 15–30 cm from the nose — not a room, keyboard, or phone screen</li>
+                  <li>Each crop is checked before it is queued; you need 3 good ones</li>
+                </ul>
+              )}
             </div>
-            <PhotoIntake onCapture={handleNoseCapture} mode="multi" />
-            <div className="form-actions" style={{ marginTop: "1rem" }}>
-              <button className="btn btn-outline" type="button" onClick={() => setStep(3)}>
-                <Icon name="arrowLeft" size={16} /> Back
-              </button>
-            </div>
+            <PhotoIntake
+              onCapture={handleNoseCapture}
+              mode="multi"
+              onCroppingChange={setNoseCropping}
+            />
+            {!noseCropping && (
+              <div className="form-actions" style={{ marginTop: "1rem" }}>
+                <button className="btn btn-outline" type="button" onClick={() => setStep(3)}>
+                  <Icon name="arrowLeft" size={16} /> Back
+                </button>
+              </div>
+            )}
             {loading && (
               <div className="upload-progress glass-card">
                 <div className="progress-spinner"></div>

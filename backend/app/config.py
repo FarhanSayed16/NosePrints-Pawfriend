@@ -39,8 +39,10 @@ class Settings(BaseSettings):
     DETECTOR_CONF_THRESHOLD: float = 0.35
     DETECTOR_RETRY_CONF_THRESHOLD: float = 0.20
     DETECTOR_CLOSEUP_PAD: float = 0.30
-    # Accept for register/identify only if final YOLO conf is at least this (blocks weak false positives).
-    DETECTOR_MIN_ACCEPT_CONF: float = 0.40
+    # Public accept floor. Preview may still *suggest* boxes slightly below this.
+    DETECTOR_MIN_ACCEPT_CONF: float = 0.32
+    # Show a draggable suggestion even when we will not claim “Nose found”.
+    DETECTOR_PREVIEW_SUGGEST_CONF: float = 0.22
 
     # ── Matching (from ml/eval_results/embedding/metrics.txt, 17 Aug 2026) ──
     # Cosine vs 6,000-dog gallery. Placeholder 0.85 was far too high for this model.
@@ -55,28 +57,43 @@ class Settings(BaseSettings):
     TOP_K_MATCHES: int = 5  # Number of top candidates to return
 
     # ── Image Quality Thresholds ──
-    MIN_SHARPNESS_SCORE: float = 70.0  # Laplacian variance; 100 was too harsh on phone JPEGs
-    MIN_BRIGHTNESS: int = 40
-    MAX_BRIGHTNESS: int = 220
+    MIN_SHARPNESS_SCORE: float = 55.0  # scene / full-frame crops
+    # Tight client nose crops (dark leather) often score lower Laplacian — still usable
+    MIN_SHARPNESS_SCORE_CROP: float = 38.0
+    MIN_BRIGHTNESS: int = 35
+    MAX_BRIGHTNESS: int = 225
     MIN_NOSE_COVERAGE: float = 0.15  # Nose bbox must fill ≥ 15% of frame
 
-    # ── G1 nose-crop heuristics (junk / keyboard filters) ──
+    # ── G1 nose-crop heuristics (junk / keyboard / fabric filters) ──
     NOSE_CROP_MIN_ASPECT: float = 0.55
     NOSE_CROP_MAX_ASPECT: float = 1.85
     NOSE_MAX_EDGE_DENSITY: float = 0.22
     NOSE_MAX_GRID_REGULARITY: float = 0.42
-    NOSE_MIN_LIKENESS: float = 0.32
-    NOSE_MIN_LAPLACIAN: float = 28.0  # blank walls / flat fills
-    NOSE_MAX_BBOX_FRAME_FRACTION: float = 0.92
+    NOSE_MIN_LIKENESS: float = 0.36
+    # Hasler–Süsstrunk colorfulness; blankets / UI screens score high, leather low
+    NOSE_MAX_COLORFULNESS: float = 36.0
+    # HSV hue circular std (degrees) on non-dark pixels — multi-colour fabric
+    NOSE_MAX_HUE_SPREAD: float = 48.0
+    # Leather center (dark *or* pink/brown) — uniform fur sits ~0.33
+    NOSE_MIN_DARK_CENTER: float = 0.40
+    NOSE_MIN_LAPLACIAN: float = 22.0  # blank walls / flat fills
+    NOSE_MAX_BBOX_FRAME_FRACTION: float = 0.85
     NOSE_MIN_BBOX_IN_CROP: float = 0.12
+    # Client crop: detector box must not be nearly the entire crop (YOLO false full-frame)
+    NOSE_MAX_BBOX_IN_CROP: float = 0.88
     # When True, run YOLO again on the cropped JPEG (G1.1).
     NOSE_REDETECT_ON_CROP: bool = True
+    # If re-detect fails on a client crop, keep first pass when heuristics pass
+    NOSE_REDETECT_SOFT_FALLBACK: bool = True
+    NOSE_REDETECT_SOFT_MIN_LIKENESS: float = 0.36
+    # YOLO miss on pre_cropped: soft-accept when heuristics pass (fabric gates still apply)
+    NOSE_SOFT_MISS_MIN_LIKENESS: float = 0.36
 
     # ── G3 look-photo soft gate (full body / face — not biometric) ──
-    # ── G3 look-photo soft gate ──
-    LOOK_MAX_EDGE_DENSITY: float = 0.18
-    LOOK_MAX_GRID_REGULARITY: float = 0.38
+    LOOK_MAX_EDGE_DENSITY: float = 0.12
+    LOOK_MAX_GRID_REGULARITY: float = 0.28
     LOOK_MIN_LAPLACIAN: float = 22.0
+    LOOK_MAX_SCREEN_UI: float = 0.42
     # Public profile-photo overwrite window (hours after dog.created_at); staff bypasses
     PROFILE_PHOTO_OPEN_HOURS: int = 48
 

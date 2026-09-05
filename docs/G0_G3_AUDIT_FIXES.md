@@ -45,10 +45,47 @@
 
 ---
 
+## Capture UX follow-on (5 Sep 2026)
+
+Follow-up to G0–G3 after false “Nose found” on keyboards and false rejects of tight real-nose crops:
+
+| Fix | Notes |
+|-----|--------|
+| Full-frame bbox split | Max frame-fraction reject only on scene / first pass; `pre_cropped` keeps min fraction + heuristics |
+| Detect-preview honesty | Junk / low conf / full-frame → `detected=false` (never “Nose found”) |
+| Look soft-warn UX | No green “Photo ready” until Use anyway or clean gate |
+| Crop editor | Stage-first layout, small handles, sticky Confirm |
+| Intake chrome | Horizontal Look actions; Camera auto-start; parallel convert+detect; light check status |
+
+Phone acceptance: Look keyboard soft-warns; nose keyboard fails preview/quality; real close-up passes crop + check.
+
+### Fur / fabric harden (same day, evening)
+
+Screenshot showed blanket + fur crops “passed the nose check” and live camera said green “Looks sharp” on the dog’s back:
+
+| Fix | Notes |
+|-----|--------|
+| Colorfulness / hue-spread / leather-center | Reject multi-colour fabric and uniform fur |
+| Soft-miss / soft-redetect | Heuristics + fabric gates (not ultra-high likeness floors) |
+| Camera hint | Focus-only copy; no green “Looks sharp = nose OK” |
+
+### Real-nose balance (same evening)
+
+Over-tight gates caused “quality too low” / “no nose found” on real leather:
+
+| Fix | Notes |
+|-----|--------|
+| Preview suggests bbox when unsure | UI no longer drops YOLO box on soft miss |
+| Pink leather center | Brighter pink/brown centers accepted |
+| Lower crop sharpness floor | Dark leather phone JPEGs pass quality |
+| Accept conf 0.32 + suggest 0.22 | Fewer false rejects; junk still blocked by fabric/edge gates |
+
+---
+
 ## G4 deferred
 
 Fine-tune detector/embedder, open-set calibration, hard animal look classifier, liveness, staff nose override — see original plan Phase G4.
 
 ---
 
-*Remediation pass applied 5 Sep 2026.*
+*Remediation pass applied 5 Sep 2026. Capture UX follow-on applied same day.*

@@ -17,7 +17,7 @@ def test_keyboard_look_soft_warns(fixtures):
     assert result.ok is True
     assert result.soft_warn is True
     joined = " ".join(result.issues).lower()
-    assert "keyboard" in joined or "grid" in joined or "edges" in joined or "busy" in joined
+    assert "keyboard" in joined or "grid" in joined or "edges" in joined or "busy" in joined or "screen" in joined
 
 
 def test_blank_wall_look_soft_warns(fixtures):
@@ -26,6 +26,26 @@ def test_blank_wall_look_soft_warns(fixtures):
     assert result.soft_warn is True
     joined = " ".join(result.issues).lower()
     assert "blank" in joined or "flat" in joined
+
+
+def test_chat_screen_look_soft_warns():
+    """Synthetic WhatsApp-like green bubbles should soft-warn (not Photo ready)."""
+    import cv2
+    import numpy as np
+
+    img = np.full((320, 240, 3), 40, dtype=np.uint8)
+    # green chat bubbles (BGR)
+    cv2.rectangle(img, (20, 40), (200, 90), (80, 200, 90), -1)
+    cv2.rectangle(img, (40, 120), (220, 170), (80, 200, 90), -1)
+    cv2.rectangle(img, (20, 200), (180, 250), (80, 200, 90), -1)
+    ok, buf = cv2.imencode(".jpg", img)
+    assert ok
+    result = assess_look_photo(buf.tobytes())
+    assert result.ok is True
+    assert result.soft_warn is True
+    assert result.scores.get("screen_ui_score", 0) >= 0.35 or any(
+        "screen" in i.lower() or "busy" in i.lower() or "edges" in i.lower() for i in result.issues
+    )
 
 
 def test_tiny_look_hard_rejects():
