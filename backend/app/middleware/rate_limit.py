@@ -33,6 +33,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return settings.RATE_LIMIT_UPLOAD_PER_MINUTE
         if path.startswith("/api/v1/noseprints/upload"):
             return settings.RATE_LIMIT_UPLOAD_PER_MINUTE
+        if path == "/api/v1/dogs/look-check":
+            return settings.RATE_LIMIT_UPLOAD_PER_MINUTE
         if "/profile-photo" in path:
             return settings.RATE_LIMIT_UPLOAD_PER_MINUTE
         if path in ("/api/v1/found-intake", "/api/v1/dogs/found-intake"):

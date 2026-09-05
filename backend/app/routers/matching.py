@@ -80,6 +80,10 @@ async def identify_dog(
     file: UploadFile = File(..., description="Nose crop or photo containing a nose"),
     appearance: UploadFile | None = File(default=None, description="Optional full dog / face photo"),
     pre_cropped: bool = Query(False),
+    force_appearance: bool = Query(
+        False,
+        description="Override soft look-photo warning for the optional appearance file",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -88,6 +92,8 @@ async def identify_dog(
     Optional `appearance` is stored for staff side-by-side review and a coat-colour
     hint. It does not replace nose cosine as the identity signal.
     """
+    from app.services.look_gate import assess_look_photo
+
     require_embedding_model()
 
     image_bytes = await file.read()
@@ -114,6 +120,32 @@ async def identify_dog(
             appearance_bytes = None
     query_appearance_url = None
     if appearance_bytes:
+        # P1.1: same soft look gate as profile-photo
+        gate = assess_look_photo(appearance_bytes)
+        if not gate.ok:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": gate.issues[0] if gate.issues else "Look photo rejected",
+                    "issues": gate.issues,
+                    "soft_warn": False,
+                    "scores": gate.scores,
+                },
+            )
+        if gate.soft_warn and not force_appearance:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": gate.issues[0] if gate.issues else "Please confirm this is a dog photo",
+                    "issues": gate.issues,
+                    "soft_warn": True,
+                    "scores": gate.scores,
+                    "suggestions": [
+                        "Choose a full-body or face photo of the dog",
+                        "Or tap Use anyway, then search again",
+                    ],
+                },
+            )
         query_appearance_url = await storage_service.upload_image(
             appearance_bytes,
             folder="match-appearance",

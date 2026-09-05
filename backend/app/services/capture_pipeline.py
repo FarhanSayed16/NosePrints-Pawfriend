@@ -1,5 +1,9 @@
 """
-Shared capture pipeline: detect nose → reject misses → quality on crop.
+Shared capture pipeline: detect nose → reject misses → quality + heuristics on crop.
+
+Client crop (`pre_cropped`) is a hint only — we never accept a frame when the
+detector finds no nose. G1 re-detects on the crop and applies junk heuristics
+before any embedding is stored or searched.
 """
 
 from dataclasses import dataclass
@@ -7,8 +11,10 @@ from dataclasses import dataclass
 import numpy as np
 from fastapi import HTTPException, status
 
+from app.config import settings
 from app.schemas import QualityCheckResult
 from app.services.nose_detector import DetectionResult, nose_detector
+from app.services.nose_heuristics import assess_nose_crop_heuristics, encode_bgr_jpeg
 from app.services.quality import assess_crop_quality
 
 
@@ -20,6 +26,26 @@ NO_NOSE_DETAIL = {
         "Align the nose inside the on-screen circle",
         "Use even lighting and avoid motion blur",
         "Keep a little muzzle around the nose — do not crop so tight the nose fills the whole photo",
+        "Do not upload keyboards, rooms, or other non-nose photos",
+    ],
+}
+
+LOW_CONF_DETAIL = {
+    "message": "Nose detection is too uncertain for a reliable print",
+    "issues": ["Detector confidence below the acceptance threshold"],
+    "suggestions": [
+        "Get a closer, sharper photo of the black nose leather",
+        "Fill most of the crop box with the nose, not the whole face or body",
+        "Avoid busy backgrounds and non-dog objects",
+    ],
+}
+
+HEURISTIC_DETAIL = {
+    "message": "This photo does not look like a usable dog nose print",
+    "suggestions": [
+        "Crop tightly on the black/pink nose leather",
+        "Do not use keyboards, screens, rooms, or whole-body shots as the nose print",
+        "Retake outdoors or under even light, 15–30 cm from the nose",
     ],
 }
 
@@ -33,9 +59,46 @@ class PreparedScan:
     quality: QualityCheckResult
 
 
+def _require_detection(detection: DetectionResult) -> None:
+    if detection.bbox is None or detection.crop is None or detection.crop.size == 0:
+        raise HTTPException(status_code=422, detail=NO_NOSE_DETAIL)
+
+    min_conf = settings.DETECTOR_MIN_ACCEPT_CONF
+    if float(detection.confidence) < min_conf:
+        detail = {
+            **LOW_CONF_DETAIL,
+            "issues": [
+                *LOW_CONF_DETAIL["issues"],
+                f"Confidence {float(detection.confidence):.2f} < minimum {min_conf:.2f}",
+            ],
+            "scores": {"detector_confidence": round(float(detection.confidence), 4)},
+        }
+        raise HTTPException(status_code=422, detail=detail)
+
+
+def _redetect_on_crop(crop_bgr: np.ndarray) -> DetectionResult:
+    """G1.1 — run YOLO again on the cropped JPEG bytes."""
+    crop_bytes = encode_bgr_jpeg(crop_bgr)
+    return nose_detector.detect(crop_bytes)
+
+
 def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> PreparedScan:
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty file")
+
+    # P2.1: client crops skip frame coverage — require re-detect so junk cannot skip YOLO
+    if pre_cropped and not settings.NOSE_REDETECT_ON_CROP:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Client crops require nose re-detection to be enabled",
+                "issues": ["NOSE_REDETECT_ON_CROP is disabled while pre_cropped=true"],
+                "suggestions": [
+                    "Enable NOSE_REDETECT_ON_CROP on the server",
+                    "Or upload a full frame without a client crop",
+                ],
+            },
+        )
 
     if not nose_detector.is_loaded:
         raise HTTPException(
@@ -51,15 +114,34 @@ def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> Prepa
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    _require_detection(detection)
+
     orig_h, orig_w = detection.original.shape[:2]
     crop = detection.crop
     bbox = detection.bbox
-    if bbox is None or crop is None or crop.size == 0:
+    confidence = float(detection.confidence)
+
+    # G1.1: after a full-frame detect, re-run YOLO on the crop itself.
+    # Client-confirmed crops are already crop-sized; still re-detect when enabled
+    # so a junk crop cannot skip a second opinion.
+    if settings.NOSE_REDETECT_ON_CROP:
+        try:
+            second = _redetect_on_crop(crop)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _require_detection(second)
+        # Prefer the tighter crop from the second pass when it exists
+        crop = second.crop
+        confidence = min(confidence, float(second.confidence))
         if pre_cropped:
-            crop = detection.original
-            bbox = (0, 0, orig_w, orig_h)
+            # bbox is relative to the client crop / second original
+            ch, cw = second.original.shape[:2]
+            bbox = second.bbox
+            orig_h, orig_w = ch, cw
         else:
-            raise HTTPException(status_code=422, detail=NO_NOSE_DETAIL)
+            # Map second bbox is in crop-local coords; keep first-pass bbox in full frame
+            # for coverage checks, but use second crop pixels for embedding.
+            pass
 
     quality = assess_crop_quality(
         crop,
@@ -83,8 +165,26 @@ def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> Prepa
                     "sharpness": quality.sharpness_score,
                     "brightness": quality.brightness_score,
                     "nose_coverage": quality.nose_coverage,
-                    "detector_confidence": detection.confidence,
+                    "detector_confidence": confidence,
                 },
+            },
+        )
+
+    # G1.2 / G1.4 — aspect, edges, grid, nose-likeness
+    gate = assess_nose_crop_heuristics(
+        crop,
+        bbox=bbox,
+        frame_w=orig_w,
+        frame_h=orig_h,
+        pre_cropped=pre_cropped,
+    )
+    if not gate.passed:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                **HEURISTIC_DETAIL,
+                "issues": gate.issues,
+                "scores": {**gate.scores, "detector_confidence": round(confidence, 4)},
             },
         )
 
@@ -92,6 +192,6 @@ def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> Prepa
         original=detection.original,
         crop=crop,
         bbox=bbox,
-        confidence=detection.confidence,
+        confidence=confidence,
         quality=quality,
     )

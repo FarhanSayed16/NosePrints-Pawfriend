@@ -70,12 +70,22 @@ class OwnerUpdate(BaseModel):
 class DogCreate(BaseModel):
     owner_id: Optional[UUID] = None
     name: Optional[str] = Field(None, max_length=255)
-    breed: Optional[str] = Field(None, max_length=100)
-    color: Optional[str] = Field(None, max_length=100)
+    breed: Optional[str] = Field(default="Unknown", max_length=100)
+    color: Optional[str] = Field(default="Unknown", max_length=100)
     sex: Optional[str] = Field(None, max_length=10)
     approx_dob: Optional[date] = None
     microchip_id: Optional[str] = Field(None, max_length=50)
     status: str = Field(default="registered", pattern="^(registered|lost|found)$")
+
+    @field_validator("breed", "color", mode="before")
+    @classmethod
+    def blank_label_to_unknown(cls, value):
+        """G3.2: never store empty breed/color — use explicit Unknown."""
+        if value is None:
+            return "Unknown"
+        if isinstance(value, str) and not value.strip():
+            return "Unknown"
+        return value.strip() if isinstance(value, str) else value
 
 
 class DogResponse(BaseModel):
@@ -114,6 +124,16 @@ class DogUpdate(BaseModel):
     last_seen_at: Optional[datetime] = None
     last_seen_note: Optional[str] = Field(None, max_length=500)
     found_notes: Optional[str] = Field(None, max_length=2000)
+
+    @field_validator("breed", "color", mode="before")
+    @classmethod
+    def blank_label_to_unknown(cls, value):
+        """G3.2 / P1.5: blank breed/color become Unknown; omit field to leave unchanged."""
+        if value is None:
+            return None  # PATCH omit — do not force Unknown when field not sent
+        if isinstance(value, str) and not value.strip():
+            return "Unknown"
+        return value.strip() if isinstance(value, str) else value
 
 
 class DogSearchParams(BaseModel):
@@ -254,6 +274,24 @@ class FoundIntakeRequest(BaseModel):
         max_length=500,
         description="Stored crop URL from identify (must be /uploads/...)",
     )
+
+    @field_validator("breed", "color", mode="before")
+    @classmethod
+    def blank_label_to_unknown(cls, value):
+        if value is None:
+            return "Unknown"
+        if isinstance(value, str) and not value.strip():
+            return "Unknown"
+        return value.strip() if isinstance(value, str) else value
+
+
+class LookCheckResult(BaseModel):
+    """G3 soft gate for full-dog / face photos."""
+    ok: bool
+    soft_warn: bool = False
+    issues: list[str] = []
+    scores: dict[str, float] = {}
+    message: str = ""
 
 
 # ────────────────────────────────────────────

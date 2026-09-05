@@ -39,11 +39,18 @@ class Settings(BaseSettings):
     DETECTOR_CONF_THRESHOLD: float = 0.35
     DETECTOR_RETRY_CONF_THRESHOLD: float = 0.20
     DETECTOR_CLOSEUP_PAD: float = 0.30
+    # Accept for register/identify only if final YOLO conf is at least this (blocks weak false positives).
+    DETECTOR_MIN_ACCEPT_CONF: float = 0.40
 
     # ── Matching (from ml/eval_results/embedding/metrics.txt, 17 Aug 2026) ──
     # Cosine vs 6,000-dog gallery. Placeholder 0.85 was far too high for this model.
     MATCH_THRESHOLD: float = 0.56  # T_high ~5% FAR ("likely")
     MATCH_THRESHOLD_LOW: float = 0.51  # T_low ~20% FAR ("possible")
+    # G2: public demos — disable "possible" band; only ≥ MATCH_THRESHOLD_STRICT counts as a match.
+    MATCH_STRICT_DEMO: bool = False
+    MATCH_THRESHOLD_STRICT: float = 0.60
+    # Staff queue: when True (or when MATCH_STRICT_DEMO), only "matched" / likely rows appear.
+    MATCH_QUEUE_LIKELY_ONLY: bool = False
     LOST_STATUS_BOOST: float = 0.03  # added to cosine for ranking only, not displayed score
     TOP_K_MATCHES: int = 5  # Number of top candidates to return
 
@@ -52,6 +59,26 @@ class Settings(BaseSettings):
     MIN_BRIGHTNESS: int = 40
     MAX_BRIGHTNESS: int = 220
     MIN_NOSE_COVERAGE: float = 0.15  # Nose bbox must fill ≥ 15% of frame
+
+    # ── G1 nose-crop heuristics (junk / keyboard filters) ──
+    NOSE_CROP_MIN_ASPECT: float = 0.55
+    NOSE_CROP_MAX_ASPECT: float = 1.85
+    NOSE_MAX_EDGE_DENSITY: float = 0.22
+    NOSE_MAX_GRID_REGULARITY: float = 0.42
+    NOSE_MIN_LIKENESS: float = 0.32
+    NOSE_MIN_LAPLACIAN: float = 28.0  # blank walls / flat fills
+    NOSE_MAX_BBOX_FRAME_FRACTION: float = 0.92
+    NOSE_MIN_BBOX_IN_CROP: float = 0.12
+    # When True, run YOLO again on the cropped JPEG (G1.1).
+    NOSE_REDETECT_ON_CROP: bool = True
+
+    # ── G3 look-photo soft gate (full body / face — not biometric) ──
+    # ── G3 look-photo soft gate ──
+    LOOK_MAX_EDGE_DENSITY: float = 0.18
+    LOOK_MAX_GRID_REGULARITY: float = 0.38
+    LOOK_MIN_LAPLACIAN: float = 22.0
+    # Public profile-photo overwrite window (hours after dog.created_at); staff bypasses
+    PROFILE_PHOTO_OPEN_HOURS: int = 48
 
     # ── CORS (JSON list or comma-separated in env) ──
     CORS_ORIGINS: list[str] = [

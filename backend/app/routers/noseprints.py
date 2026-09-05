@@ -14,12 +14,10 @@ from app.models.database import Dog, NosePrint
 from app.schemas import NosePrintResponse, QualityCheckResult
 from app.services import (
     embedding_extractor,
-    nose_detector,
     storage_service,
 )
 from app.services.capture_pipeline import prepare_nose_scan
 from app.services.ml_guard import require_embedding_model
-from app.services.quality import assess_crop_quality
 
 import logging
 
@@ -133,33 +131,45 @@ async def upload_nose_print(
 @router.post("/quality-check", response_model=QualityCheckResult)
 async def check_image_quality(
     file: UploadFile = File(..., description="Image to check quality"),
+    pre_cropped: bool = Query(False),
 ):
     """
-    Pre-check image quality before full upload.
-    Useful for the PWA to give real-time feedback during capture.
+    Pre-check using the same nose gate as upload (P2.2).
+    Returns passed=false with issues when detection/heuristics fail.
     """
+    from fastapi import HTTPException as FastAPIHTTPException
+
     image_bytes = await file.read()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    if not nose_detector.is_loaded:
-        raise HTTPException(
-            status_code=503,
-            detail="Nose detector is not loaded. Train and place nose_detector.onnx.",
-        )
-
-    detection = nose_detector.detect(image_bytes)
-    if detection.bbox is None or detection.crop is None:
+    try:
+        scan = prepare_nose_scan(image_bytes, pre_cropped=pre_cropped)
+        return scan.quality
+    except FastAPIHTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        detail = exc.detail
+        issues = []
+        if isinstance(detail, dict):
+            issues = list(detail.get("issues") or [])
+            if detail.get("message"):
+                issues = [detail["message"], *issues]
+            scores = detail.get("scores") or {}
+            return QualityCheckResult(
+                passed=False,
+                sharpness_score=float(scores.get("sharpness") or 0.0),
+                brightness_score=float(scores.get("brightness") or 0.0),
+                nose_coverage=float(scores.get("nose_coverage") or 0.0),
+                issues=issues or ["Image did not pass the nose quality gate"],
+            )
         return QualityCheckResult(
             passed=False,
             sharpness_score=0.0,
             brightness_score=0.0,
             nose_coverage=0.0,
-            issues=["No dog nose detected — move closer and align the nose in the circle"],
+            issues=[str(detail) if detail else "Image did not pass the nose quality gate"],
         )
-
-    orig_h, orig_w = detection.original.shape[:2]
-    return assess_crop_quality(detection.crop, detection.bbox, orig_w, orig_h)
 
 
 @router.get("/{dog_id}", response_model=list[NosePrintResponse])
