@@ -1,32 +1,37 @@
+.lost-page .container {
+  padding-top: 1.5rem;
+  padding-bottom: 3rem;
+}
+
 /* Action Banner */
 .action-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-  border: 1px solid rgba(253, 121, 168, 0.2) !important;
-  background: rgba(253, 121, 168, 0.05) !important;
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+  border: 1px solid #fae3b8 !important;
+  background: #fffaf0 !important;
 }
 
 .banner-content h3 {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.2rem;
 }
 
 .banner-content p {
   color: var(--clr-text-secondary);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 /* Lost Grid */
 .lost-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .lost-card {
-  padding: 1.5rem !important;
+  padding: 1.25rem !important;
   border-left: 3px solid var(--clr-danger) !important;
 }
 
@@ -34,15 +39,15 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 
 .lost-avatar {
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: rgba(214, 48, 49, 0.1);
+  background: #fdecea;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -57,18 +62,18 @@
 .lost-details {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0.75rem 0 1rem;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.75rem;
 }
 
 .lost-detail {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--clr-text-secondary);
 }
 
 .lost-cta {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.75rem;
 }
 
 @media (max-width: 768px) {
