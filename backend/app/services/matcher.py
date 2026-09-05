@@ -19,6 +19,87 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def resolve_match_thresholds() -> tuple[float, float, bool]:
+    """
+    Returns (t_high, t_low, allow_possible).
+
+    MATCH_STRICT_DEMO: only scores ≥ MATCH_THRESHOLD_STRICT are matches;
+    the "possible" band is disabled (senior/public demos).
+    """
+    if settings.MATCH_STRICT_DEMO:
+        t = float(settings.MATCH_THRESHOLD_STRICT)
+        return t, t, False
+    return (
+        float(settings.MATCH_THRESHOLD),
+        float(settings.MATCH_THRESHOLD_LOW),
+        True,
+    )
+
+
+def decide_match_band(
+    top_score: float,
+    *,
+    t_high: float | None = None,
+    t_low: float | None = None,
+    allow_possible: bool | None = None,
+) -> tuple[bool, str, str]:
+    """Pure threshold decision — unit-tested without DB."""
+    if t_high is None or t_low is None or allow_possible is None:
+        t_high, t_low, allow_possible = resolve_match_thresholds()
+
+    if top_score >= t_high:
+        return True, "likely", "matched"
+    if allow_possible and top_score >= t_low:
+        return True, "possible", "possible_match"
+    return False, "none", "no_match"
+
+
+def apply_candidate_honesty(
+    candidates: list[MatchCandidate],
+    *,
+    t_high: float,
+    t_low: float,
+    allow_possible: bool,
+) -> tuple[bool, str, str, list[MatchCandidate], float, float]:
+    """
+    G2.1 — drop sub-threshold rows; empty candidates + top_score=0 when no match band.
+    Returns (match_found, band, result_status, candidates, response_top_score, audit_top).
+    """
+    top_score = candidates[0].similarity_score if candidates else 0.0
+    audit_top = top_score
+    match_found, confidence_band, result_status = decide_match_band(
+        top_score,
+        t_high=t_high,
+        t_low=t_low,
+        allow_possible=allow_possible,
+    )
+
+    if match_found:
+        candidates = [c for c in candidates if c.similarity_score >= t_low]
+        if not candidates:
+            return False, "none", "no_match", [], 0.0, audit_top
+        top_score = candidates[0].similarity_score
+        match_found, confidence_band, result_status = decide_match_band(
+            top_score,
+            t_high=t_high,
+            t_low=t_low,
+            allow_possible=allow_possible,
+        )
+        if not match_found:
+            return False, "none", "no_match", [], 0.0, audit_top
+        return True, confidence_band, result_status, candidates, top_score, audit_top
+
+    # No match band: never expose nearest-neighbor as API top_score
+    return False, "none", "no_match", [], 0.0, audit_top
+
+
+def staff_queue_statuses() -> tuple[str, ...]:
+    """G2.3: which MatchLog.result_status values appear in the staff queue."""
+    if settings.MATCH_STRICT_DEMO or settings.MATCH_QUEUE_LIKELY_ONLY:
+        return ("matched",)
+    return ("matched", "possible_match")
+
+
 async def find_matches(
     db: AsyncSession,
     query_embedding: np.ndarray,
@@ -119,29 +200,30 @@ async def find_matches(
     )
     candidates = candidates[:top_k]
 
-    # ── Threshold decision (two-band, from ROC) ──
-    top_score = candidates[0].similarity_score if candidates else 0.0
-    t_high = settings.MATCH_THRESHOLD
-    t_low = settings.MATCH_THRESHOLD_LOW
-    if top_score >= t_high:
-        confidence_band = "likely"
-        match_found = True
-        result_status = "matched"
-    elif top_score >= t_low:
-        confidence_band = "possible"
-        match_found = True
-        result_status = "possible_match"
-    else:
-        confidence_band = "none"
-        match_found = False
-        result_status = "no_match"
+    # ── Threshold decision (two-band, or strict-demo single band) ──
+    t_high, t_low, allow_possible = resolve_match_thresholds()
+    (
+        match_found,
+        confidence_band,
+        result_status,
+        candidates,
+        top_score,
+        audit_top,
+    ) = apply_candidate_honesty(
+        candidates,
+        t_high=t_high,
+        t_low=t_low,
+        allow_possible=allow_possible,
+    )
 
     # ── Log this match attempt (audit trail) ──
+    # no_match rows are stored for audit but excluded from the staff queue (G2.3).
+    # Audit DB keeps nearest-neighbor score even when API top_score is 0.
     match_log = MatchLog(
         query_image_url=query_image_url,
         query_appearance_url=query_appearance_url,
         top_match_dog_id=candidates[0].dog_id if candidates else None,
-        top_match_score=top_score,
+        top_match_score=top_score if candidates else audit_top,
         result_status=result_status,
     )
     db.add(match_log)
@@ -149,16 +231,25 @@ async def find_matches(
 
     logger.info(
         f"Match search: top_score={top_score:.4f}, "
+        f"audit_top={audit_top:.4f}, "
         f"band={confidence_band}, "
         f"match_found={match_found}, "
-        f"candidates={len(candidates)}"
+        f"candidates={len(candidates)}, "
+        f"strict_demo={settings.MATCH_STRICT_DEMO}"
     )
+
+    if confidence_band == "likely":
+        threshold_used = t_high
+    elif confidence_band == "possible":
+        threshold_used = t_low
+    else:
+        threshold_used = t_low if allow_possible else t_high
 
     return MatchResponse(
         match_found=match_found,
         confidence_band=confidence_band,
         top_score=round(top_score, 4),
-        threshold_used=t_high if confidence_band == "likely" else t_low,
+        threshold_used=threshold_used,
         candidates=candidates,
         query_image_url=query_image_url,
         query_appearance_url=query_appearance_url,
@@ -268,7 +359,7 @@ async def list_match_queue(
     """Staff match queue. Owner contact is never included here."""
     from app.schemas import MatchQueueItem
 
-    pending = MatchLog.result_status.in_(("matched", "possible_match"))
+    pending = MatchLog.result_status.in_(staff_queue_statuses())
     query = select(MatchLog, Dog).outerjoin(
         Dog, Dog.id == MatchLog.top_match_dog_id
     )
