@@ -1,0 +1,46 @@
+.found-page .container {
+  max-width: 640px;
+  padding-top: 1.5rem;
+  padding-bottom: 3rem;
+}
+
+.found-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.found-error {
+  color: var(--clr-danger);
+  font-size: 0.88rem;
+}
+
+.found-id {
+  font-size: 0.82rem;
+  color: var(--clr-text-muted);
+  word-break: break-all;
+  margin-top: 0.6rem;
+}
+
+.found-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+}
+
+.lost-preview {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.lost-preview img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: var(--border-glass);
+}

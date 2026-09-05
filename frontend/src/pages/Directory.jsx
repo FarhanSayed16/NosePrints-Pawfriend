@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
-import { getDogs } from "../services/api";
+import { Link } from "react-router-dom";
+import Icon from "../components/Icon";
+import { getDogs, getStaffToken, mediaUrl } from "../services/api";
 import "./Directory.css";
 
 export default function Directory() {
@@ -49,35 +51,35 @@ export default function Directory() {
 
   return (
     <div className="page directory-page">
-      <div className="container">
-        <div className="page-header">
-          <h1>
-            Dog <span className="text-gradient">Directory</span>
-          </h1>
-          <p>Browse all registered dogs — search by breed, color, or name</p>
-        </div>
+      <div className="page-header">
+        <h1>
+          Dog <span className="text-gradient">Directory</span>
+        </h1>
+        <p>Browse all registered dogs — search by breed, color, or name</p>
+      </div>
 
+      <div className="container">
         {/* Search/Filter Bar */}
         <form onSubmit={handleSearch} className="filter-bar glass-card">
           <div className="filter-inputs">
             <input
               className="form-input"
               type="text"
-              placeholder="🔍 Search by name..."
+              placeholder="Search by name..."
               value={filters.name}
               onChange={(e) => setFilters({ ...filters, name: e.target.value })}
             />
             <input
               className="form-input"
               type="text"
-              placeholder="🏷️ Breed..."
+              placeholder="Breed..."
               value={filters.breed}
               onChange={(e) => setFilters({ ...filters, breed: e.target.value })}
             />
             <input
               className="form-input"
               type="text"
-              placeholder="🎨 Color..."
+              placeholder="Color..."
               value={filters.color}
               onChange={(e) => setFilters({ ...filters, color: e.target.value })}
             />
@@ -87,14 +89,14 @@ export default function Directory() {
               onChange={(e) => setFilters({ ...filters, status: e.target.value })}
             >
               <option value="">All Status</option>
-              <option value="registered">✅ Registered</option>
-              <option value="lost">🚨 Lost</option>
-              <option value="found">🔎 Found</option>
+              <option value="registered">Registered</option>
+              <option value="lost">Lost</option>
+              <option value="found">Found</option>
             </select>
           </div>
           <div className="filter-actions">
             <button className="btn btn-primary btn-sm" type="submit">
-              Search
+              <Icon name="search" size={14} /> Search
             </button>
             <button className="btn btn-outline btn-sm" type="button" onClick={clearFilters}>
               Clear
@@ -115,7 +117,9 @@ export default function Directory() {
         {/* Results */}
         {!loading && dogs.length === 0 && (
           <div className="glass-card text-center mt-3" style={{ padding: "3rem" }}>
-            <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🐕</div>
+            <div style={{ marginBottom: "1rem" }}>
+              <Icon name="dog" size={48} style={{ color: "var(--clr-text-muted)" }} />
+            </div>
             <h3>No dogs found</h3>
             <p style={{ color: "var(--clr-text-muted)" }}>
               Try adjusting your search filters, or register the first dog!
@@ -131,9 +135,11 @@ export default function Directory() {
                   <div className="dog-card-header">
                     <div className="dog-avatar">
                       {dog.profile_photo_url ? (
-                        <img src={dog.profile_photo_url} alt={dog.name} />
+                        <img src={mediaUrl(dog.profile_photo_url)} alt={dog.name} />
                       ) : (
-                        <span className="avatar-placeholder">🐕</span>
+                        <span className="avatar-placeholder">
+                          <Icon name="dog" size={24} />
+                        </span>
                       )}
                     </div>
                     <span className={`badge badge-${dog.status}`}>
@@ -143,21 +149,30 @@ export default function Directory() {
                   <h3 className="dog-name">{dog.name || "Unnamed"}</h3>
                   <div className="dog-meta">
                     {dog.breed && (
-                      <span className="meta-item">🏷️ {dog.breed}</span>
+                      <span className="meta-item">{dog.breed}</span>
                     )}
                     {dog.color && (
-                      <span className="meta-item">🎨 {dog.color}</span>
+                      <span className="meta-item">{dog.color}</span>
                     )}
                     {dog.sex && (
                       <span className="meta-item">
-                        {dog.sex === "male" ? "♂️" : "♀️"} {dog.sex}
+                        {dog.sex === "male" ? "♂" : "♀"} {dog.sex}
                       </span>
                     )}
                   </div>
                   <div className="dog-footer">
                     <span className="noseprint-count">
-                      🐾 {dog.nose_print_count || 0} nose prints
+                      <Icon name="paw" size={14} style={{ marginRight: "0.25rem" }} />
+                      {dog.nose_print_count || 0} nose prints
                     </span>
+                    {dog.status !== "lost" && getStaffToken() && (
+                      <Link
+                        to={`/report-lost/${dog.id}`}
+                        className="btn btn-outline btn-sm"
+                      >
+                        Report lost
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}
@@ -170,7 +185,7 @@ export default function Directory() {
                 disabled={page <= 1}
                 onClick={() => setPage(page - 1)}
               >
-                ← Previous
+                <Icon name="arrowLeft" size={14} /> Previous
               </button>
               <span className="page-number">Page {page}</span>
               <button
@@ -178,7 +193,7 @@ export default function Directory() {
                 disabled={dogs.length < 20}
                 onClick={() => setPage(page + 1)}
               >
-                Next →
+                Next <Icon name="arrowRight" size={14} />
               </button>
             </div>
           </>
