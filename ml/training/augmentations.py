@@ -34,14 +34,16 @@ def get_train_transforms(img_size: int = 224) -> A.Compose:
         A.CLAHE(clip_limit=4.0, p=0.3),
         A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.3),
         # Noise / degradation (simulates real phone camera conditions)
-        A.GaussNoise(var_limit=(10.0, 50.0), p=0.4),
+        A.GaussNoise(std_range=(0.05, 0.15), p=0.4),
         A.GaussianBlur(blur_limit=(3, 5), p=0.2),
         A.MotionBlur(blur_limit=5, p=0.15),
-        A.ImageCompression(quality_lower=60, quality_upper=95, p=0.3),
-        # Cutout (occlusion robustness)
+        A.ImageCompression(quality_range=(60, 95), p=0.3),
         A.CoarseDropout(
-            max_holes=4, max_height=20, max_width=20,
-            min_holes=1, fill_value=0, p=0.3,
+            num_holes_range=(1, 4),
+            hole_height_range=(8, 20),
+            hole_width_range=(8, 20),
+            fill=0,
+            p=0.3,
         ),
         # Normalize for ResNet50 (ImageNet stats)
         A.Normalize(

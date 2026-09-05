@@ -19,7 +19,7 @@ def export_embedding_model(checkpoint_path: str, output_path: str, img_size: int
     """Export the embedding model to ONNX."""
 
     # Load checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     embedding_dim = checkpoint.get("embedding_dim", 512)
 
     # Reconstruct model
@@ -59,11 +59,38 @@ def export_embedding_model(checkpoint_path: str, output_path: str, img_size: int
     logger.info(f"  Verification: output shape = {result[0].shape} ✓")
 
 
+def export_detector(weights_path: str, output_path: str, img_size: int = 640):
+    """Export a trained Ultralytics YOLO detector to ONNX."""
+    from ultralytics import YOLO
+
+    model = YOLO(weights_path)
+    exported = model.export(
+        format="onnx",
+        imgsz=img_size,
+        opset=12,
+        simplify=True,
+        dynamic=False,
+        nms=False,
+    )
+    from pathlib import Path
+    import shutil
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(exported, output_path)
+    logger.info(f"Copied detector ONNX to {output_path}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export model to ONNX")
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to .pt checkpoint")
+    parser.add_argument("--checkpoint", type=str, required=False, help="Path to embedding .pt checkpoint")
     parser.add_argument("--output", type=str, required=True, help="Output .onnx path")
     parser.add_argument("--img_size", type=int, default=224)
+    parser.add_argument("--detector-weights", type=str, default=None, help="YOLO .pt to export as detector ONNX")
     args = parser.parse_args()
 
-    export_embedding_model(args.checkpoint, args.output, args.img_size)
+    if args.detector_weights:
+        export_detector(args.detector_weights, args.output, args.img_size)
+    else:
+        if not args.checkpoint:
+            raise SystemExit("--checkpoint is required unless --detector-weights is set")
+        export_embedding_model(args.checkpoint, args.output, args.img_size)

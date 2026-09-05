@@ -250,6 +250,10 @@ def train(args):
     checkpoint_dir = Path(args.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+    use_amp = device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    logger.info(f"AMP: {use_amp}")
+
     for epoch in range(args.epochs):
         # ── Train ──
         model.train()
@@ -257,17 +261,19 @@ def train(args):
         train_loss = 0.0
 
         for batch_idx, (images, labels) in enumerate(train_loader):
-            images, labels = images.to(device), labels.to(device)
+            images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
 
-            optimizer.zero_grad()
-            embeddings = model(images)
-            loss = criterion(embeddings, labels)
-            loss.backward()
-            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                embeddings = model(images)
+                loss = criterion(embeddings, labels)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             train_loss += loss.item()
 
-            if (batch_idx + 1) % 20 == 0:
+            if (batch_idx + 1) % 100 == 0:
                 logger.info(
                     f"Epoch [{epoch+1}/{args.epochs}] "
                     f"Batch [{batch_idx+1}/{len(train_loader)}] "
@@ -283,9 +289,10 @@ def train(args):
 
         with torch.no_grad():
             for images, labels in val_loader:
-                images, labels = images.to(device), labels.to(device)
-                embeddings = model(images)
-                loss = criterion(embeddings, labels)
+                images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
+                with torch.amp.autocast("cuda", enabled=use_amp):
+                    embeddings = model(images)
+                    loss = criterion(embeddings, labels)
                 val_loss += loss.item()
 
         avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0
@@ -329,14 +336,19 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, required=True, help="Path to dataset directory")
     parser.add_argument("--checkpoint_dir", type=str, default="./checkpoints", help="Where to save checkpoints")
     parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--img_size", type=int, default=224)
     parser.add_argument("--embedding_dim", type=int, default=512)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--arcface_scale", type=float, default=30.0)
     parser.add_argument("--arcface_margin", type=float, default=0.5)
-    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=0,
+        help="DataLoader workers. 0 is safest on Windows.",
+    )
 
     args = parser.parse_args()
     train(args)
