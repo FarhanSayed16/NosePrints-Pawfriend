@@ -61,8 +61,8 @@ Keep a quality gate (master plan). Change *how* we fail, not “accept anything�
 **Server**
 
 - Sniff JPEG/PNG/WebP magic bytes when MIME is empty, `image/jpg`, or `octet-stream`.
-- `pre_cropped=true`: skip **coverage** (the user already framed the nose). If YOLO misses, use the whole uploaded crop.
-- Still check sharpness + brightness on the nose region.
+- `pre_cropped=true`: skip **frame coverage** (the user already framed the nose) **and** require `NOSE_REDETECT_ON_CROP=true`. If YOLO finds no nose, **reject** — never use the whole uploaded crop as a fallback (G0.1).
+- Still check sharpness + brightness on the nose region; G1 heuristics reject keyboard/blank-like crops.
 - Field sharpness floor **70** (was 100). Coverage **15%** stays for live camera frames that are not pre-cropped.
 
 ### 5. Ship it through the Cloudflare tunnel
