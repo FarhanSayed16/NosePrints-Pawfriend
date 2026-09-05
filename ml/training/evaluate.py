@@ -35,7 +35,7 @@ def extract_all_embeddings(
     """Extract embeddings for all images in the dataset."""
     transform = get_val_transforms(img_size)
     dataset = NosePrintDataset(data_dir, transform=transform)
-    loader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=2)
+    loader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=0)
 
     all_embeddings = []
     all_labels = []
@@ -86,116 +86,191 @@ def build_pairs(
     return np.array(similarities), np.array(pair_labels)
 
 
-def evaluate(args):
-    """Run full evaluation: extract embeddings, build pairs, compute ROC."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def evaluate_gallery_probe(
+    gallery_emb: np.ndarray,
+    gallery_labels: np.ndarray,
+    probe_emb: np.ndarray,
+    probe_labels: np.ndarray,
+) -> dict:
+    """
+    Open-set style scores: each val photo vs registered (train) photos.
+    Genuine = best cosine to the same dog. Impostor = best cosine to any other dog.
+    """
+    gallery_by_dog: dict[int, list[np.ndarray]] = {}
+    for emb, lab in zip(gallery_emb, gallery_labels):
+        gallery_by_dog.setdefault(int(lab), []).append(emb)
 
-    # Load model
-    checkpoint = torch.load(args.checkpoint, map_location=device)
+    dog_ids = sorted(gallery_by_dog)
+    centroids = np.stack(
+        [np.mean(np.stack(gallery_by_dog[d]), axis=0) for d in dog_ids]
+    )
+    centroids /= np.linalg.norm(centroids, axis=1, keepdims=True) + 1e-8
+    dog_index = {d: i for i, d in enumerate(dog_ids)}
+
+    genuine = []
+    impostor = []
+    rank1 = 0
+    used = 0
+    for emb, lab in zip(probe_emb, probe_labels):
+        lab = int(lab)
+        if lab not in dog_index:
+            continue
+        used += 1
+        sims = centroids @ emb
+        pred = dog_ids[int(np.argmax(sims))]
+        if pred == lab:
+            rank1 += 1
+        genuine.append(float(sims[dog_index[lab]]))
+        others = np.delete(sims, dog_index[lab])
+        impostor.append(float(others.max()) if others.size else 0.0)
+
+    scores = np.array(genuine + impostor, dtype=np.float32)
+    y = np.array([1] * len(genuine) + [0] * len(impostor), dtype=np.int32)
+    return {
+        "scores": scores,
+        "labels": y,
+        "rank1": rank1 / max(1, used),
+        "n_probe": used,
+        "genuine": np.array(genuine),
+        "impostor": np.array(impostor),
+    }
+
+
+def _write_roc_outputs(
+    similarities: np.ndarray,
+    pair_labels: np.ndarray,
+    output_dir: Path,
+    extra_lines: list[str] | None = None,
+) -> None:
+    fpr, tpr, thresholds = roc_curve(pair_labels, similarities)
+    auc = roc_auc_score(pair_labels, similarities)
+
+    j_scores = tpr - fpr
+    optimal_idx = np.argmax(j_scores)
+    optimal_threshold = float(thresholds[optimal_idx])
+    optimal_tpr = float(tpr[optimal_idx])
+    optimal_fpr = float(fpr[optimal_idx])
+
+    def thresh_at_fpr(target: float) -> tuple[float, float, float]:
+        idx = int(np.argmin(np.abs(fpr - target)))
+        return float(thresholds[idx]), float(tpr[idx]), float(fpr[idx])
+
+    t_high, tpr_high, fpr_high = thresh_at_fpr(0.05)
+    t_low, tpr_low, fpr_low = thresh_at_fpr(0.20)
+
+    logger.info(f"AUC: {auc:.4f}")
+    logger.info(f"Youden threshold: {optimal_threshold:.4f}  TPR={optimal_tpr:.4f} FAR={optimal_fpr:.4f}")
+    logger.info(f"T_high (~5% FAR): {t_high:.4f}  TPR={tpr_high:.4f} FAR={fpr_high:.4f}")
+    logger.info(f"T_low  (~20% FAR): {t_low:.4f}  TPR={tpr_low:.4f} FAR={fpr_low:.4f}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    plt.figure(figsize=(10, 8))
+    plt.plot(fpr, tpr, "b-", linewidth=2, label=f"ROC (AUC = {auc:.4f})")
+    plt.plot([0, 1], [0, 1], "r--", linewidth=1, label="Random")
+    plt.scatter([optimal_fpr], [optimal_tpr], color="green", s=80, zorder=5, label="Youden")
+    plt.xlabel("False Positive Rate (FAR)")
+    plt.ylabel("True Positive Rate")
+    plt.title("NosePrint matching ROC")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / "roc_curve.png", dpi=150)
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    pos_sims = similarities[pair_labels == 1]
+    neg_sims = similarities[pair_labels == 0]
+    plt.hist(neg_sims, bins=80, alpha=0.6, color="red", label="Different dogs")
+    plt.hist(pos_sims, bins=80, alpha=0.6, color="green", label="Same dog")
+    plt.axvline(x=t_high, color="blue", linestyle="--", label=f"T_high={t_high:.3f}")
+    plt.axvline(x=t_low, color="purple", linestyle=":", label=f"T_low={t_low:.3f}")
+    plt.xlabel("Cosine similarity")
+    plt.ylabel("Count")
+    plt.title("Similarity score distribution")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / "similarity_distribution.png", dpi=150)
+    plt.close()
+
+    with open(output_dir / "metrics.txt", "w", encoding="utf-8") as f:
+        f.write(f"AUC: {auc:.6f}\n")
+        f.write(f"Youden Threshold: {optimal_threshold:.6f}\n")
+        f.write(f"TPR at Youden: {optimal_tpr:.6f}\n")
+        f.write(f"FPR at Youden: {optimal_fpr:.6f}\n")
+        f.write(f"T_high (FAR~5%): {t_high:.6f}\n")
+        f.write(f"TPR at T_high: {tpr_high:.6f}\n")
+        f.write(f"FPR at T_high: {fpr_high:.6f}\n")
+        f.write(f"T_low (FAR~20%): {t_low:.6f}\n")
+        f.write(f"TPR at T_low: {tpr_low:.6f}\n")
+        f.write(f"FPR at T_low: {fpr_low:.6f}\n")
+        f.write(f"Positive Pairs: {int(pair_labels.sum())}\n")
+        f.write(f"Negative Pairs: {int((pair_labels == 0).sum())}\n")
+        if extra_lines:
+            for line in extra_lines:
+                f.write(line.rstrip() + "\n")
+    logger.info(f"Wrote {output_dir / 'metrics.txt'}")
+
+
+def evaluate(args):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
     embedding_dim = checkpoint.get("embedding_dim", 512)
 
     model = NosePrintEmbedder(embedding_dim=embedding_dim, pretrained=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
 
-    logger.info("Extracting embeddings...")
-    embeddings, labels = extract_all_embeddings(model, args.data_dir, args.img_size, device)
-    logger.info(f"Extracted {len(embeddings)} embeddings across {len(set(labels))} dogs")
-
-    logger.info("Building pairs...")
-    similarities, pair_labels = build_pairs(embeddings, labels)
-    pos_count = int(pair_labels.sum())
-    neg_count = len(pair_labels) - pos_count
-    logger.info(f"Built {len(pair_labels)} pairs: {pos_count} positive, {neg_count} negative")
-
-    # ROC Curve
-    fpr, tpr, thresholds = roc_curve(pair_labels, similarities)
-    auc = roc_auc_score(pair_labels, similarities)
-
-    logger.info(f"\n{'='*50}")
-    logger.info(f"  AUC (Area Under ROC Curve): {auc:.4f}")
-    logger.info(f"{'='*50}")
-
-    # Find optimal threshold (Youden's J statistic)
-    j_scores = tpr - fpr
-    optimal_idx = np.argmax(j_scores)
-    optimal_threshold = thresholds[optimal_idx]
-    optimal_tpr = tpr[optimal_idx]
-    optimal_fpr = fpr[optimal_idx]
-
-    logger.info(f"  Optimal threshold: {optimal_threshold:.4f}")
-    logger.info(f"  At this threshold:")
-    logger.info(f"    True Positive Rate (recall):  {optimal_tpr:.4f}")
-    logger.info(f"    False Positive Rate (FAR):    {optimal_fpr:.4f}")
-    logger.info(f"    False Reject Rate (FRR):      {1 - optimal_tpr:.4f}")
-
-    # Performance at specific thresholds
-    logger.info(f"\n  Performance at key thresholds:")
-    for thresh in [0.70, 0.75, 0.80, 0.85, 0.90, 0.95]:
-        idx = np.argmin(np.abs(thresholds - thresh))
-        logger.info(
-            f"    threshold={thresh:.2f}: "
-            f"TPR={tpr[idx]:.4f}, FPR={fpr[idx]:.4f}, "
-            f"FRR={1-tpr[idx]:.4f}"
-        )
-
-    # Plot ROC curve
+    gallery_dir = getattr(args, "gallery_dir", None)
+    probe_dir = getattr(args, "probe_dir", None)
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    plt.figure(figsize=(10, 8))
-    plt.plot(fpr, tpr, "b-", linewidth=2, label=f"ROC Curve (AUC = {auc:.4f})")
-    plt.plot([0, 1], [0, 1], "r--", linewidth=1, label="Random")
-    plt.scatter(
-        [optimal_fpr], [optimal_tpr],
-        color="green", s=100, zorder=5,
-        label=f"Optimal (threshold={optimal_threshold:.3f})",
+    if gallery_dir and probe_dir:
+        logger.info("Gallery-probe protocol (train=gallery, val=probe)")
+        gallery_emb, gallery_lab = extract_all_embeddings(model, gallery_dir, args.img_size, str(device))
+        probe_emb, probe_lab = extract_all_embeddings(model, probe_dir, args.img_size, str(device))
+        result = evaluate_gallery_probe(gallery_emb, gallery_lab, probe_emb, probe_lab)
+        logger.info(f"Probes used: {result['n_probe']}  Rank-1: {result['rank1']:.4f}")
+        _write_roc_outputs(
+            result["scores"],
+            result["labels"],
+            output_dir,
+            extra_lines=[
+                f"Protocol: gallery-probe",
+                f"Rank-1: {result['rank1']:.6f}",
+                f"Probes: {result['n_probe']}",
+                f"Gallery images: {len(gallery_emb)}",
+                f"Probe images: {len(probe_emb)}",
+            ],
+        )
+        logger.info("Evaluation complete!")
+        return
+
+    logger.info("Extracting embeddings...")
+    embeddings, labels = extract_all_embeddings(model, args.data_dir, args.img_size, str(device))
+    logger.info(f"Extracted {len(embeddings)} embeddings across {len(set(labels))} dogs")
+    similarities, pair_labels = build_pairs(embeddings, labels)
+    _write_roc_outputs(
+        similarities,
+        pair_labels,
+        output_dir,
+        extra_lines=[
+            f"Protocol: pairwise",
+            f"Total Images: {len(embeddings)}",
+            f"Total Dogs: {len(set(labels.tolist()))}",
+        ],
     )
-    plt.xlabel("False Positive Rate (FAR)", fontsize=14)
-    plt.ylabel("True Positive Rate (1 - FRR)", fontsize=14)
-    plt.title("NosePrint Matching — ROC Curve", fontsize=16)
-    plt.legend(fontsize=12)
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(output_dir / "roc_curve.png", dpi=150)
-    logger.info(f"ROC curve saved to {output_dir / 'roc_curve.png'}")
-
-    # Similarity distribution plot
-    plt.figure(figsize=(10, 6))
-    pos_sims = similarities[pair_labels == 1]
-    neg_sims = similarities[pair_labels == 0]
-    plt.hist(neg_sims, bins=100, alpha=0.6, color="red", label="Different dogs (negative)")
-    plt.hist(pos_sims, bins=100, alpha=0.6, color="green", label="Same dog (positive)")
-    plt.axvline(x=optimal_threshold, color="blue", linestyle="--", label=f"Threshold = {optimal_threshold:.3f}")
-    plt.xlabel("Cosine Similarity Score", fontsize=14)
-    plt.ylabel("Count", fontsize=14)
-    plt.title("Similarity Score Distribution", fontsize=16)
-    plt.legend(fontsize=12)
-    plt.tight_layout()
-    plt.savefig(output_dir / "similarity_distribution.png", dpi=150)
-    logger.info(f"Similarity distribution saved to {output_dir / 'similarity_distribution.png'}")
-
-    # Save metrics to file
-    with open(output_dir / "metrics.txt", "w") as f:
-        f.write(f"AUC: {auc:.6f}\n")
-        f.write(f"Optimal Threshold: {optimal_threshold:.6f}\n")
-        f.write(f"TPR at Optimal: {optimal_tpr:.6f}\n")
-        f.write(f"FPR at Optimal: {optimal_fpr:.6f}\n")
-        f.write(f"Total Pairs: {len(pair_labels)}\n")
-        f.write(f"Positive Pairs: {pos_count}\n")
-        f.write(f"Negative Pairs: {neg_count}\n")
-        f.write(f"Total Images: {len(embeddings)}\n")
-        f.write(f"Total Dogs: {len(set(labels))}\n")
-
     logger.info("Evaluation complete!")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate nose-print model accuracy")
     parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("--data_dir", type=str, required=True)
+    parser.add_argument("--data_dir", type=str, default="", help="Single folder for pairwise ROC")
+    parser.add_argument("--gallery_dir", type=str, default=None)
+    parser.add_argument("--probe_dir", type=str, default=None)
     parser.add_argument("--output_dir", type=str, default="./eval_results")
     parser.add_argument("--img_size", type=int, default=224)
     args = parser.parse_args()
-
+    if not args.gallery_dir and not args.data_dir:
+        raise SystemExit("Pass --data_dir or both --gallery_dir and --probe_dir")
     evaluate(args)
