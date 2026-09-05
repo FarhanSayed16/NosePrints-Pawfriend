@@ -20,6 +20,7 @@ export default function Register() {
   const [uploadTotal, setUploadTotal] = useState(0);
   const [uploadPhase, setUploadPhase] = useState("");
   const [appearanceFile, setAppearanceFile] = useState(null);
+  const [lookForce, setLookForce] = useState(false);
 
   const handleOwnerSubmit = (e) => {
     e.preventDefault();
@@ -33,8 +34,12 @@ export default function Register() {
 
   const handleDogSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    if (!dog.breed.trim() || !dog.color.trim()) {
+      setError("Enter breed and color, or tap Unknown for each.");
+      return;
+    }
+    setLoading(true);
     try {
       const res = await registerOwnerAndDog({
         owner: { ...owner, consent: true },
@@ -73,8 +78,12 @@ export default function Register() {
     }
 
     setUploadPhase("");
-    if (successCount > 0) {
+    if (successCount >= 3) {
       setStep(5);
+    } else if (successCount > 0) {
+      setError(
+        `Only ${successCount} of ${images.length} nose prints saved. Need at least 3 good crops — retake the failed ones.`
+      );
     } else {
       setError(failures[0] || "None of the photos could be saved. Try a closer, sharper nose crop.");
     }
@@ -169,12 +178,26 @@ export default function Register() {
                 <input className="form-input" type="text" value={dog.name} onChange={(e) => setDog({ ...dog, name: e.target.value })} placeholder="Buddy, Luna, Max..." />
               </div>
               <div className="form-group">
-                <label className="form-label">Breed</label>
+                <label className="form-label">Breed *</label>
                 <input className="form-input" type="text" value={dog.breed} onChange={(e) => setDog({ ...dog, breed: e.target.value })} placeholder="Indian Pariah, Labrador, mixed..." />
+                <button
+                  type="button"
+                  className={`chip-unknown ${dog.breed === "Unknown" ? "active" : ""}`}
+                  onClick={() => setDog({ ...dog, breed: "Unknown" })}
+                >
+                  Unknown
+                </button>
               </div>
               <div className="form-group">
-                <label className="form-label">Color</label>
+                <label className="form-label">Color *</label>
                 <input className="form-input" type="text" value={dog.color} onChange={(e) => setDog({ ...dog, color: e.target.value })} placeholder="Brown, Black, Golden..." />
+                <button
+                  type="button"
+                  className={`chip-unknown ${dog.color === "Unknown" ? "active" : ""}`}
+                  onClick={() => setDog({ ...dog, color: "Unknown" })}
+                >
+                  Unknown
+                </button>
               </div>
               <div className="form-group">
                 <label className="form-label">Sex</label>
@@ -214,7 +237,12 @@ export default function Register() {
             <AppearancePhoto
               title="Full dog photo"
               help="A body or face photo helps staff confirm the dog later. This is not the nose print — that comes next. Use Take photo or Choose from gallery."
-              onFile={setAppearanceFile}
+              softGate
+              readyLabel="Photo ready — will be saved with this dog"
+              onFile={(file, meta = {}) => {
+                setAppearanceFile(file);
+                setLookForce(Boolean(meta.force));
+              }}
             />
             <div className="form-actions" style={{ marginTop: "1rem" }}>
               <button className="btn btn-outline" type="button" onClick={() => setStep(2)}>
@@ -223,7 +251,11 @@ export default function Register() {
               <button
                 className="btn btn-outline"
                 type="button"
-                onClick={() => setStep(4)}
+                onClick={() => {
+                  setAppearanceFile(null);
+                  setLookForce(false);
+                  setStep(4);
+                }}
               >
                 Skip for now
               </button>
@@ -239,10 +271,15 @@ export default function Register() {
                   setLoading(true);
                   setError(null);
                   try {
-                    await uploadProfilePhoto(createdDog.id, appearanceFile);
+                    await uploadProfilePhoto(createdDog.id, appearanceFile, { force: lookForce });
                     setStep(4);
                   } catch (err) {
-                    setError(formatApiError(err, "Could not save the dog photo"));
+                    const detail = err.response?.data?.detail;
+                    if (detail?.soft_warn) {
+                      setError("Confirm the look photo with Use anyway above, then tap Next.");
+                    } else {
+                      setError(formatApiError(err, "Could not save the dog photo"));
+                    }
                   } finally {
                     setLoading(false);
                   }
@@ -308,7 +345,8 @@ export default function Register() {
             </p>
             <div className="success-info glass-card">
               <div className="info-row"><span>Dog:</span> <strong>{dog.name || "N/A"}</strong></div>
-              <div className="info-row"><span>Breed:</span> <strong>{dog.breed || "N/A"}</strong></div>
+              <div className="info-row"><span>Breed:</span> <strong>{dog.breed || "Unknown"}</strong></div>
+              <div className="info-row"><span>Color:</span> <strong>{dog.color || "Unknown"}</strong></div>
               <div className="info-row"><span>Owner:</span> <strong>{owner.name}</strong></div>
               <div className="info-row"><span>Nose Prints:</span> <strong>{uploadedPrints}</strong></div>
             </div>
@@ -322,6 +360,7 @@ export default function Register() {
                 setCreatedDog(null);
                 setUploadedPrints(0);
                 setAppearanceFile(null);
+                setLookForce(false);
               }}>
                 <Icon name="register" size={18} /> Register Another Dog
               </button>

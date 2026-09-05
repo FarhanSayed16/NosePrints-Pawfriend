@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "../components/Icon";
 import {
-  confirmMatch, formatApiError, getMatchQueue, getStaffToken,
+  confirmMatch, deleteDog, formatApiError, getDogs, getMatchQueue, getStaffToken,
   mediaUrl, setStaffToken, staffLogin, staffMe,
 } from "../services/api";
 import "./Staff.css";
@@ -18,6 +18,14 @@ export default function Staff() {
   const [notes, setNotes] = useState("");
   const [actionMsg, setActionMsg] = useState("");
   const [ownerReveal, setOwnerReveal] = useState(null);
+  const [tab, setTab] = useState("queue");
+  const [registry, setRegistry] = useState([]);
+  const [registryLoading, setRegistryLoading] = useState(false);
+  const [registryQuery, setRegistryQuery] = useState("");
+  const [purgeMsg, setPurgeMsg] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+  const [registryPage, setRegistryPage] = useState(1);
+  const [registryHasMore, setRegistryHasMore] = useState(false);
 
   const loadQueue = async () => {
     setLoading(true);
@@ -29,10 +37,32 @@ export default function Staff() {
     } finally { setLoading(false); }
   };
 
+  const loadRegistry = async ({ name = registryQuery, page = 1, append = false } = {}) => {
+    setRegistryLoading(true);
+    setPurgeMsg("");
+    try {
+      const perPage = 50;
+      const params = { per_page: perPage, page };
+      if (name.trim()) params.name = name.trim();
+      const res = await getDogs(params);
+      const rows = Array.isArray(res.data) ? res.data : res.data?.items || [];
+      setRegistry((prev) => (append ? [...prev, ...rows] : rows));
+      setRegistryPage(page);
+      setRegistryHasMore(rows.length >= perPage);
+    } catch (err) {
+      if (err.response?.status === 401) { setStaffToken(null); setAuthed(false); }
+      else setPurgeMsg(formatApiError(err, "Could not load registry"));
+    } finally { setRegistryLoading(false); }
+  };
+
   useEffect(() => {
     if (!authed) return;
     staffMe().then((res) => { setStaff(res.data); loadQueue(); }).catch(() => { setStaffToken(null); setAuthed(false); });
   }, [authed]);
+
+  useEffect(() => {
+    if (authed && tab === "registry") loadRegistry({ page: 1, append: false });
+  }, [authed, tab]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -48,6 +78,7 @@ export default function Staff() {
   const logout = () => {
     setStaffToken(null); setAuthed(false); setStaff(null);
     setQueue([]); setSelected(null); setOwnerReveal(null);
+    setRegistry([]); setTab("queue");
   };
 
   const handleDecision = async (confirmed) => {
@@ -64,6 +95,23 @@ export default function Staff() {
       await loadQueue();
       if (!confirmed) setSelected(null);
     } catch (err) { setActionMsg(formatApiError(err, "Could not save decision")); }
+  };
+
+  const handleDeleteDog = async (dog) => {
+    const label = dog.name || "Unnamed dog";
+    if (!window.confirm(`Delete ${label} and all nose prints? This cannot be undone.`)) return;
+    setDeletingId(dog.id);
+    setPurgeMsg("");
+    try {
+      await deleteDog(dog.id);
+      setPurgeMsg(`Deleted ${label}.`);
+      setRegistry((rows) => rows.filter((d) => d.id !== dog.id));
+      if (selected?.matched_dog_id === dog.id) setSelected(null);
+    } catch (err) {
+      setPurgeMsg(formatApiError(err, "Delete failed"));
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   if (!authed) {
@@ -94,23 +142,109 @@ export default function Staff() {
   return (
     <div className="page staff-page">
       <div className="page-header">
-        <h1>Match <span className="text-gradient">Queue</span></h1>
-        <p>Signed in as {staff?.email}. Confirm side-by-side before contacting an owner.</p>
+        <h1>{tab === "queue" ? <>Match <span className="text-gradient">Queue</span></> : <>Registry <span className="text-gradient">Cleanup</span></>}</h1>
+        <p>Signed in as {staff?.email}. {tab === "queue" ? "Confirm side-by-side before contacting an owner." : "Delete polluted test dogs (junk noses/photos) before demos. Purge known junk (e.g. keyboard “Jack”) here before any senior demo."}</p>
       </div>
 
       <div className="container">
         <div className="staff-actions-bar">
+          <button
+            type="button"
+            className={`btn btn-sm ${tab === "queue" ? "btn-primary" : "btn-outline"}`}
+            onClick={() => setTab("queue")}
+          >
+            Match queue
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${tab === "registry" ? "btn-primary" : "btn-outline"}`}
+            onClick={() => setTab("registry")}
+          >
+            Registry cleanup
+          </button>
           <button className="btn btn-outline btn-sm" onClick={logout}>Log out</button>
         </div>
 
-        {loading && (
+        {tab === "registry" && (
+          <div className="glass-card purge-card">
+            <h3>Delete dogs</h3>
+            <p className="purge-help">
+              Removes the dog, nose embeddings, and stored photos. Use this to clear keyboard/junk test registrations before a senior demo.
+            </p>
+            <form
+              className="purge-search"
+              onSubmit={(e) => {
+                e.preventDefault();
+                loadRegistry({ name: registryQuery, page: 1, append: false });
+              }}
+            >
+              <input
+                className="form-input"
+                value={registryQuery}
+                onChange={(e) => setRegistryQuery(e.target.value)}
+                placeholder="Search by name (optional)"
+              />
+              <button className="btn btn-outline btn-sm" type="submit" disabled={registryLoading}>
+                Search
+              </button>
+            </form>
+            {purgeMsg && <p className="review-msg">{purgeMsg}</p>}
+            {registryLoading && <p className="purge-help">Loading…</p>}
+            {!registryLoading && registry.length === 0 && (
+              <p className="purge-help">No dogs found.</p>
+            )}
+            {!registryLoading && registry.length > 0 && (
+              <ul className="purge-list">
+                {registry.map((dog) => (
+                  <li key={dog.id} className="purge-row">
+                    <div className="purge-meta">
+                      {dog.profile_photo_url ? (
+                        <img className="purge-thumb" src={mediaUrl(dog.profile_photo_url)} alt="" />
+                      ) : (
+                        <span className="purge-thumb placeholder" />
+                      )}
+                      <div>
+                        <strong>{dog.name || "Unnamed"}</strong>
+                        <span>
+                          {dog.breed || "Unknown"} · {dog.color || "Unknown"} · {dog.status}
+                          {dog.nose_print_count != null ? ` · ${dog.nose_print_count} prints` : ""}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      style={{ color: "var(--clr-danger)", borderColor: "var(--clr-danger)" }}
+                      disabled={deletingId === dog.id}
+                      onClick={() => handleDeleteDog(dog)}
+                    >
+                      {deletingId === dog.id ? "Deleting…" : "Delete"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!registryLoading && registryHasMore && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                style={{ marginTop: "0.75rem" }}
+                onClick={() => loadRegistry({ page: registryPage + 1, append: true })}
+              >
+                Load more
+              </button>
+            )}
+          </div>
+        )}
+
+        {tab === "queue" && loading && (
           <div className="text-center mt-4">
             <div className="progress-spinner"></div>
             <p className="mt-1" style={{ color: "var(--clr-text-muted)" }}>Loading queue...</p>
           </div>
         )}
 
-        {!loading && queue.length === 0 && (
+        {tab === "queue" && !loading && queue.length === 0 && (
           <div className="glass-card text-center" style={{ padding: "3rem" }}>
             <div style={{ marginBottom: "1rem" }}><Icon name="check" size={48} style={{ color: "var(--clr-secondary)" }} /></div>
             <h3>No pending matches</h3>
@@ -118,7 +252,7 @@ export default function Staff() {
           </div>
         )}
 
-        {!loading && queue.length > 0 && (
+        {tab === "queue" && !loading && queue.length > 0 && (
           <div className="queue-list">
             {queue.map((item) => (
               <button key={item.id} type="button" className={`queue-row glass-card ${selected?.id === item.id ? "active" : ""}`}
@@ -132,7 +266,7 @@ export default function Staff() {
           </div>
         )}
 
-        {selected && (
+        {tab === "queue" && selected && (
           <div className="glass-card review-card">
             <h3>Review match</h3>
             <div className="compare-grid">

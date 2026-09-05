@@ -109,7 +109,7 @@ export const detectNosePreview = (file) => {
   return api.post("/match/detect-preview", formData);
 };
 
-export const identifyDog = (file, appearanceFile, { preCropped = false } = {}) => {
+export const identifyDog = (file, appearanceFile, { preCropped = false, forceAppearance = false } = {}) => {
   const formData = new FormData();
   const named = file instanceof File ? file : new File([file], "nose.jpg", { type: file.type || "image/jpeg" });
   formData.append("file", named, named.name || "nose.jpg");
@@ -121,15 +121,24 @@ export const identifyDog = (file, appearanceFile, { preCropped = false } = {}) =
     formData.append("appearance", look, look.name || "look.jpg");
   }
   return api.post("/match/identify", formData, {
-    params: { pre_cropped: preCropped },
+    params: { pre_cropped: preCropped, force_appearance: forceAppearance },
   });
 };
 
-export const uploadProfilePhoto = (dogId, file) => {
+export const checkLookPhoto = (file) => {
   const formData = new FormData();
   const named = file instanceof File ? file : new File([file], "look.jpg", { type: file.type || "image/jpeg" });
   formData.append("file", named, named.name || "look.jpg");
-  return api.post(`/dogs/${dogId}/profile-photo`, formData);
+  return api.post("/dogs/look-check", formData);
+};
+
+export const uploadProfilePhoto = (dogId, file, { force = false } = {}) => {
+  const formData = new FormData();
+  const named = file instanceof File ? file : new File([file], "look.jpg", { type: file.type || "image/jpeg" });
+  formData.append("file", named, named.name || "look.jpg");
+  return api.post(`/dogs/${dogId}/profile-photo`, formData, {
+    params: { force },
+  });
 };
 
 export const getMatchQueue = (params = {}) =>

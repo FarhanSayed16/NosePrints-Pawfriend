@@ -7,7 +7,14 @@ import "./FoundIntake.css";
 export default function FoundIntake() {
   const location = useLocation();
   const queryImageUrl = location.state?.queryImageUrl || "";
-  const [form, setForm] = useState({ finder_nickname: "", finder_phone: "", location_note: "", breed: "", color: "", notes: "" });
+  const [form, setForm] = useState({
+    finder_nickname: "",
+    finder_phone: "",
+    location_note: "",
+    breed: "",
+    color: "",
+    notes: "",
+  });
   const [state, setState] = useState("form");
   const [error, setError] = useState("");
   const [dogId, setDogId] = useState("");
@@ -17,15 +24,27 @@ export default function FoundIntake() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    if (!form.breed.trim() || !form.color.trim()) {
+      setError("Enter breed and color, or tap Unknown for each.");
+      return;
+    }
     setState("saving");
     try {
-      const payload = {};
-      Object.entries(form).forEach(([key, value]) => { if (value.trim()) payload[key] = value.trim(); });
+      const payload = {
+        breed: form.breed.trim(),
+        color: form.color.trim(),
+      };
+      ["finder_nickname", "finder_phone", "location_note", "notes"].forEach((key) => {
+        if (form[key].trim()) payload[key] = form[key].trim();
+      });
       if (queryImageUrl) payload.query_image_url = queryImageUrl;
       const res = await foundDogIntake(payload);
       setDogId(res.data.id);
       setState("done");
-    } catch (err) { setError(formatApiError(err, "Could not list this dog as found")); setState("form"); }
+    } catch (err) {
+      setError(formatApiError(err, "Could not list this dog as found"));
+      setState("form");
+    }
   };
 
   return (
@@ -52,8 +71,16 @@ export default function FoundIntake() {
             <label className="form-label">Your nickname (optional)<input className="form-input" value={form.finder_nickname} onChange={update("finder_nickname")} placeholder="So staff can thank you" /></label>
             <label className="form-label">Phone (optional)<input className="form-input" value={form.finder_phone} onChange={update("finder_phone")} placeholder="Not shown on the public site" /></label>
             <label className="form-label">Where was the dog found?<input className="form-input" value={form.location_note} onChange={update("location_note")} placeholder="Area, landmark, or street" /></label>
-            <label className="form-label">Breed (if you know)<input className="form-input" value={form.breed} onChange={update("breed")} /></label>
-            <label className="form-label">Color<input className="form-input" value={form.color} onChange={update("color")} /></label>
+            <label className="form-label">
+              Breed *
+              <input className="form-input" value={form.breed} onChange={update("breed")} required />
+              <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: "0.35rem" }} onClick={() => setForm((p) => ({ ...p, breed: "Unknown" }))}>Unknown</button>
+            </label>
+            <label className="form-label">
+              Color *
+              <input className="form-input" value={form.color} onChange={update("color")} required />
+              <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: "0.35rem" }} onClick={() => setForm((p) => ({ ...p, color: "Unknown" }))}>Unknown</button>
+            </label>
             <label className="form-label">Notes<textarea className="form-input" rows={3} value={form.notes} onChange={update("notes")} placeholder="Collar, temperament, anything staff should know" /></label>
             {error && <p className="found-error">{error}</p>}
             <button className="btn btn-primary" type="submit" disabled={state === "saving"}>{state === "saving" ? "Saving..." : "List as found"}</button>

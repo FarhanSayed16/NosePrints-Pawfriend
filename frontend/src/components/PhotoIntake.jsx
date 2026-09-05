@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import CameraCapture from "./CameraCapture";
 import NoseCropEditor from "./NoseCropEditor";
 import ProcessingOverlay from "./ProcessingOverlay";
@@ -21,12 +21,20 @@ export default function PhotoIntake({ onCapture, mode = "single" }) {
   const [cropSrc, setCropSrc] = useState(null);
   const [cropBox, setCropBox] = useState(null);
   const [cropMsg, setCropMsg] = useState("");
-  const [pending, setPending] = useState([]);
+  const [pending, setPending] = useState([]); // { blob, url }
   const [pickPreview, setPickPreview] = useState(null);
+  const pendingUrlsRef = useRef([]);
 
   const maxPhotos = mode === "multi" ? 5 : 1;
   const minPhotos = mode === "multi" ? 3 : 1;
   const busy = phase !== PHASE.IDLE && phase !== PHASE.CROPPING;
+
+  useEffect(() => {
+    return () => {
+      pendingUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      pendingUrlsRef.current = [];
+    };
+  }, []);
 
   const emit = (blobs, preCropped) => {
     onCapture(blobs, { preCropped });
@@ -37,9 +45,19 @@ export default function PhotoIntake({ onCapture, mode = "single" }) {
       emit(blob, true);
       return;
     }
-    setPending((prev) => [...prev, blob].slice(0, maxPhotos));
+    const url = URL.createObjectURL(blob);
+    pendingUrlsRef.current.push(url);
+    setPending((prev) => [...prev, { blob, url }].slice(0, maxPhotos));
     setPhase(PHASE.IDLE);
     setPickPreview(null);
+  };
+
+  const submitPending = () => {
+    if (pending.length < minPhotos) return;
+    emit(
+      pending.map((p) => p.blob),
+      true,
+    );
   };
 
   const openCrop = async (file) => {
@@ -103,10 +121,6 @@ export default function PhotoIntake({ onCapture, mode = "single" }) {
     setCropSrc(null);
     setCropBox(null);
     setPhase(PHASE.IDLE);
-  };
-
-  const submitPending = () => {
-    if (pending.length >= minPhotos) emit(pending, true);
   };
 
   const overlayTitle =
@@ -199,9 +213,9 @@ export default function PhotoIntake({ onCapture, mode = "single" }) {
             </strong>
           </div>
           <div className="captured-grid">
-            {pending.map((blob, idx) => (
+            {pending.map((item, idx) => (
               <div key={idx} className="captured-thumb saved">
-                <img src={URL.createObjectURL(blob)} alt={`Nose ${idx + 1}`} />
+                <img src={item.url} alt={`Nose ${idx + 1}`} />
                 <span className="thumb-number">{idx + 1}</span>
               </div>
             ))}

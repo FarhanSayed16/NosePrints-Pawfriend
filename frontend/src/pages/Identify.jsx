@@ -14,6 +14,29 @@ function appearanceLabel(hint) {
   return "No full-dog photo to compare";
 }
 
+function statusLabel(status) {
+  if (status === "lost") return "Listed lost";
+  if (status === "found") return "Listed found";
+  if (status === "registered") return "In registry";
+  return status || "In registry";
+}
+
+/** G0/P1.3: only show candidates at/above the active API threshold. */
+function visibleCandidates(results) {
+  if (!results?.match_found) return [];
+  if (results.confidence_band === "none") return [];
+  const floor =
+    typeof results.threshold_used === "number" ? results.threshold_used : 0.51;
+  const list = Array.isArray(results.candidates) ? results.candidates : [];
+  return list.filter((c) => Number(c.similarity_score) >= floor);
+}
+
+function bandHeadline(band) {
+  if (band === "likely") return "Likely registry match";
+  if (band === "possible") return "Possible registry match";
+  return "Registry suggestion";
+}
+
 export default function Identify() {
   const [state, setState] = useState("ready");
   const [results, setResults] = useState(null);
@@ -23,6 +46,7 @@ export default function Identify() {
   const [appearanceFile, setAppearanceFile] = useState(null);
   const [appearancePreview, setAppearancePreview] = useState(null);
   const [appearanceBusy, setAppearanceBusy] = useState(false);
+  const [lookForce, setLookForce] = useState(false);
   const [nosePreCropped, setNosePreCropped] = useState(false);
 
   useEffect(() => {
@@ -46,15 +70,30 @@ export default function Identify() {
     setState("loading");
     setError(null);
     try {
-      const res = await identifyDog(noseBlob, appearanceFile, { preCropped: nosePreCropped });
-      setResults(res.data);
-      if (res.data.match_found && res.data.candidates.length > 0) {
+      const res = await identifyDog(noseBlob, appearanceFile, {
+        preCropped: nosePreCropped,
+        forceAppearance: lookForce,
+      });
+      const data = res.data;
+      setResults(data);
+      const shown = visibleCandidates(data);
+      if (data.match_found && data.confidence_band !== "none" && shown.length > 0) {
         setState("results");
       } else {
         setState("no-match");
       }
     } catch (err) {
       const detail = err.response?.data?.detail;
+      if (detail?.soft_warn) {
+        setError({
+          message: detail.message || "Please confirm this is a dog photo",
+          issues: detail.issues || [],
+          suggestions: detail.suggestions || ["Tap Use anyway on the photo, then search again"],
+        });
+        setLookForce(true);
+        setState("have-nose");
+        return;
+      }
       if (typeof detail === "object" && detail !== null && !Array.isArray(detail)) {
         setError({ message: detail.message || "Identification failed", issues: detail.issues || [], suggestions: detail.suggestions || [] });
       } else {
@@ -72,6 +111,8 @@ export default function Identify() {
     if (appearancePreview) URL.revokeObjectURL(appearancePreview);
     setAppearancePreview(null);
     setAppearanceFile(null);
+    setLookForce(false);
+    setAppearanceBusy(false);
     setState("ready");
     setResults(null);
     setError(null);
@@ -82,6 +123,7 @@ export default function Identify() {
     (results?.query_appearance_url && mediaUrl(results.query_appearance_url)) ||
     appearancePreview ||
     null;
+  const candidates = visibleCandidates(results);
 
   return (
     <div className="page identify-page">
@@ -129,7 +171,12 @@ export default function Identify() {
             </div>
             <AppearancePhoto
               help="Same dog, whole body or face — colour and markings. Wait for “Photo ready” before searching."
-              onFile={setAppearanceFile}
+              softGate
+              readyLabel="Photo ready — will be sent with your search"
+              onFile={(file, meta = {}) => {
+                setAppearanceFile(file || null);
+                setLookForce(Boolean(meta.force));
+              }}
               onPreview={setAppearancePreview}
               onBusyChange={setAppearanceBusy}
             />
@@ -166,20 +213,32 @@ export default function Identify() {
           </div>
         )}
 
-        {state === "results" && results && (
+        {state === "results" && results && candidates.length > 0 && (
           <div className="results-section animate-slide-up">
             <div className="glass-card match-banner">
               <div className="match-icon"><Icon name="check" size={24} /></div>
-              <h2>{results.confidence_band === "likely" ? "Likely match" : "Possible match"}</h2>
-              <p>Nose similarity: <strong>{(results.top_score * 100).toFixed(1)}%</strong>{results.confidence_band === "possible" ? " — extra staff caution" : ""}</p>
-              <p className="match-note">A PawFriend staff member will review the nose print and the full photos before any contact is shared.</p>
+              <h2>{bandHeadline(results.confidence_band)}</h2>
+              <p>
+                {results.match_found && results.top_score > 0 ? (
+                  <>
+                    Nose similarity: <strong>{(results.top_score * 100).toFixed(1)}%</strong>
+                    {results.confidence_band === "possible" ? " — extra staff caution" : ""}
+                  </>
+                ) : (
+                  "AI suggestion for staff review"
+                )}
+              </p>
+              <p className="match-note">
+                AI suggestion only — a PawFriend staff member must confirm side-by-side before any
+                owner contact is shared. This is not a final identification.
+              </p>
             </div>
             <div className="candidates-list">
-              {results.candidates.map((candidate, idx) => (
+              {candidates.map((candidate, idx) => (
                 <div key={candidate.dog_id || idx} className="candidate-card glass-card">
                   <div className="candidate-header">
                     <span className="candidate-rank">#{idx + 1}</span>
-                    <span className={`badge badge-${candidate.status}`}>{candidate.status}</span>
+                    <span className={`badge badge-${candidate.status}`}>{statusLabel(candidate.status)}</span>
                   </div>
                   <div className="compare-grid">
                     <figure className="compare-shot">
@@ -231,7 +290,13 @@ export default function Identify() {
           <div className="glass-card no-match-card animate-slide-up text-center">
             <div className="no-match-icon"><Icon name="searchEmpty" size={32} /></div>
             <h2>No Match Found</h2>
-            <p>This dog doesn't appear to be registered yet. You can list them as found so PawFriend staff can follow up.</p>
+            <p>
+              No registered nose scored high enough to suggest a match
+              {typeof results?.top_score === "number" && results.top_score > 0
+                ? ` (closest was ${(results.top_score * 100).toFixed(1)}%, below the threshold).`
+                : "."}{" "}
+              You can list this dog as found so PawFriend staff can follow up.
+            </p>
             <div className="no-match-actions">
               <button className="btn btn-primary" onClick={reset}><Icon name="scan" size={16} /> Try Again</button>
               <Link to="/found" state={{ queryImageUrl: results?.query_image_url }} className="btn btn-secondary"><Icon name="clipboard" size={16} /> List as found</Link>
