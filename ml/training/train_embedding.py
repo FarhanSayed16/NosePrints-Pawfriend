@@ -221,10 +221,19 @@ def train(args):
     )
 
     # Model
+    resume_path = getattr(args, "resume_checkpoint", None)
     model = NosePrintEmbedder(
         embedding_dim=args.embedding_dim,
-        pretrained=True,
+        pretrained=not bool(resume_path),
     ).to(device)
+
+    if resume_path:
+        ckpt = torch.load(resume_path, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state_dict"])
+        logger.info(
+            f"Loaded embedding weights from {resume_path} "
+            f"(ckpt epoch={ckpt.get('epoch')}, val_loss={ckpt.get('val_loss')})"
+        )
 
     # Loss
     criterion = ArcFaceLoss(
@@ -348,6 +357,12 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="DataLoader workers. 0 is safest on Windows.",
+    )
+    parser.add_argument(
+        "--resume_checkpoint",
+        type=str,
+        default=None,
+        help="Continue-train from an existing best_model.pt (loads embedder weights).",
     )
 
     args = parser.parse_args()

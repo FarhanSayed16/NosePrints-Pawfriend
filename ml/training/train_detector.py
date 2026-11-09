@@ -14,33 +14,34 @@ import sys
 from pathlib import Path
 
 ML_ROOT = Path(__file__).resolve().parents[1]
-DATA_YAML = ML_ROOT / "data" / "detector" / "dog_nose_yolov8" / "data.yaml"
+DEFAULT_DATA_YAML = ML_ROOT / "data" / "detector" / "dog_nose_yolov8" / "data.yaml"
 RUNS_DIR = ML_ROOT / "runs" / "detector"
 BACKEND_MODELS = ML_ROOT.parent / "backend" / "models"
 
 
-def _ensure_dataset() -> None:
-    if not DATA_YAML.exists():
+def _ensure_dataset(data_yaml: Path) -> None:
+    if not data_yaml.exists():
         raise FileNotFoundError(
-            f"Dataset yaml not found: {DATA_YAML}\n"
-            "Put the Roboflow YOLOv8 export in ml/data/detector/dog_nose_yolov8/"
+            f"Dataset yaml not found: {data_yaml}\n"
+            "Put a YOLOv8 export under ml/data/detector/ or pass --data"
         )
-    images = DATA_YAML.parent / "train" / "images"
-    labels = DATA_YAML.parent / "train" / "labels"
+    images = data_yaml.parent / "train" / "images"
+    labels = data_yaml.parent / "train" / "labels"
     n_img = len(list(images.glob("*"))) if images.exists() else 0
     n_lab = len(list(labels.glob("*.txt"))) if labels.exists() else 0
     if n_img < 50 or n_lab < 50:
         raise RuntimeError(
             f"Dataset looks incomplete (images={n_img}, labels={n_lab}). "
-            "Re-extract the Roboflow zip into ml/data/detector/dog_nose_yolov8/"
+            f"Check {data_yaml.parent}"
         )
-    print(f"Dataset OK: {n_img} train images, {n_lab} labels")
+    print(f"Dataset OK: {n_img} train images, {n_lab} labels @ {data_yaml}")
 
 
 def train(args: argparse.Namespace) -> Path:
     from ultralytics import YOLO
 
-    _ensure_dataset()
+    data_yaml = Path(args.data)
+    _ensure_dataset(data_yaml)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     last_pt = RUNS_DIR / args.name / "weights" / "last.pt"
 
@@ -53,7 +54,7 @@ def train(args: argparse.Namespace) -> Path:
     else:
         model = YOLO(args.weights)
         model.train(
-            data=str(DATA_YAML),
+            data=str(data_yaml),
             epochs=args.epochs,
             imgsz=args.imgsz,
             batch=args.batch,
@@ -99,6 +100,11 @@ def export_onnx(weights: Path, output: Path, imgsz: int) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train YOLOv8-nano dog-nose detector")
     parser.add_argument("--weights", default="yolov8n.pt", help="Base checkpoint")
+    parser.add_argument(
+        "--data",
+        default=str(DEFAULT_DATA_YAML),
+        help="Path to data.yaml (default: dog_nose_yolov8)",
+    )
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--imgsz", type=int, default=640)
@@ -108,14 +114,18 @@ def main() -> None:
     parser.add_argument("--name", default="yolov8n-nose")
     parser.add_argument("--resume", action="store_true", help="Continue from last.pt")
     parser.add_argument("--skip-export", action="store_true")
+    parser.add_argument(
+        "--export-path",
+        default=str(BACKEND_MODELS / "nose_detector.onnx"),
+        help="Where to write the ONNX export",
+    )
     args = parser.parse_args()
 
     print(f"Python {sys.version}")
     best = train(args)
     if args.skip_export:
         return
-    onnx_path = BACKEND_MODELS / "nose_detector.onnx"
-    export_onnx(best, onnx_path, args.imgsz)
+    export_onnx(best, Path(args.export_path), args.imgsz)
 
 
 if __name__ == "__main__":
