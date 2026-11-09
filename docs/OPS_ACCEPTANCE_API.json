@@ -1,0 +1,144 @@
+[
+  {
+    "endpoint": "detect-preview",
+    "case": "keyboard",
+    "http": 200,
+    "result": {
+      "detected": false,
+      "message": "No clear nose \u2014 drag a tight box onto the nose leather yourself.",
+      "bbox": null,
+      "confidence": 0.0
+    }
+  },
+  {
+    "endpoint": "detect-preview",
+    "case": "wall",
+    "http": 200,
+    "result": {
+      "detected": false,
+      "message": "No clear nose \u2014 drag a tight box onto the nose leather yourself.",
+      "bbox": null,
+      "confidence": 0.0
+    }
+  },
+  {
+    "endpoint": "detect-preview",
+    "case": "fabric",
+    "http": 200,
+    "result": {
+      "detected": false,
+      "message": "No clear nose \u2014 drag a tight box onto the nose leather yourself.",
+      "bbox": null,
+      "confidence": 0.0
+    }
+  },
+  {
+    "endpoint": "detect-preview",
+    "case": "synth_nose",
+    "http": 200,
+    "result": {
+      "detected": false,
+      "message": "No clear nose \u2014 drag a tight box onto the nose leather yourself.",
+      "bbox": null,
+      "confidence": 0.0
+    }
+  },
+  {
+    "endpoint": "look-check",
+    "case": "keyboard",
+    "http": 200,
+    "result": {
+      "ok": true,
+      "soft_warn": true,
+      "message": "This may be a phone/laptop screen or busy object \u2014 use a real photo of the dog\u2019s body or face.",
+      "issues": [
+        "This may be a phone/laptop screen or busy object \u2014 use a real photo of the dog\u2019s body or face."
+      ]
+    }
+  },
+  {
+    "endpoint": "look-check",
+    "case": "wall",
+    "http": 200,
+    "result": {
+      "ok": true,
+      "soft_warn": true,
+      "message": "This looks almost blank/flat \u2014 take a clearer photo of the whole dog or face.",
+      "issues": [
+        "This looks almost blank/flat \u2014 take a clearer photo of the whole dog or face."
+      ]
+    }
+  },
+  {
+    "endpoint": "look-check",
+    "case": "fabric",
+    "http": 200,
+    "result": {
+      "ok": true,
+      "soft_warn": true,
+      "message": "This looks like a phone or laptop screen, not a dog. Staff need a body or face photo of the dog.",
+      "issues": [
+        "This looks like a phone or laptop screen, not a dog. Staff need a body or face photo of the dog."
+      ]
+    }
+  },
+  {
+    "endpoint": "look-check",
+    "case": "synth_nose",
+    "http": 200,
+    "result": {
+      "ok": true,
+      "soft_warn": false,
+      "message": "Looks usable",
+      "issues": []
+    }
+  },
+  {
+    "endpoint": "quality-check",
+    "case": "keyboard",
+    "http": 200,
+    "result": {
+      "passed": false,
+      "issues": [
+        "No dog nose detected in this photo",
+        "The camera did not find a nose region"
+      ]
+    }
+  },
+  {
+    "endpoint": "quality-check",
+    "case": "wall",
+    "http": 200,
+    "result": {
+      "passed": false,
+      "issues": [
+        "No dog nose detected in this photo",
+        "The camera did not find a nose region"
+      ]
+    }
+  },
+  {
+    "endpoint": "quality-check",
+    "case": "fabric",
+    "http": 200,
+    "result": {
+      "passed": false,
+      "issues": [
+        "No dog nose detected in this photo",
+        "The camera did not find a nose region"
+      ]
+    }
+  },
+  {
+    "endpoint": "quality-check",
+    "case": "synth_nose",
+    "http": 200,
+    "result": {
+      "passed": false,
+      "issues": [
+        "No dog nose detected in this photo",
+        "The camera did not find a nose region"
+      ]
+    }
+  }
+]
