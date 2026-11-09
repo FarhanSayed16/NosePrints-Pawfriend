@@ -2,7 +2,8 @@
 
 **Date:** 9 November 2026  
 **Purpose:** Single overview of what this project is, what is already done, what is still required for a solid demo, and what more ML training is needed next.  
-**Canonical plans:** [`MASTER_PLAN.md`](./MASTER_PLAN.md) · [`ACCURACY.md`](./ACCURACY.md) · [`DEPLOY.md`](./DEPLOY.md) · [`G0_G3_AUDIT_FIXES.md`](./G0_G3_AUDIT_FIXES.md)
+**Canonical plans:** [`MASTER_PLAN.md`](./MASTER_PLAN.md) · [`ACCURACY.md`](./ACCURACY.md) · [`DEPLOY.md`](./DEPLOY.md) · [`G0_G3_AUDIT_FIXES.md`](./G0_G3_AUDIT_FIXES.md)  
+**ChatGPT / senior handoff (current system + enhancement plan):** [`SYSTEM_STATUS_AND_ENHANCEMENT_PLAN.md`](./SYSTEM_STATUS_AND_ENHANCEMENT_PLAN.md)
 
 ---
 
@@ -64,8 +65,8 @@ Phone camera → JPEG upload
 
 | Model | File | Training result (honest) |
 |-------|------|---------------------------|
-| Nose detector (YOLOv8n) | `backend/models/nose_detector.onnx` | val mAP50 **0.54**, test mAP50 **0.68**; close-up recall ~**70%** with pad + retry |
-| Embedding (ResNet50 + ArcFace) | `backend/models/embedding_model.onnx` | Gallery-probe **rank-1 78.6%**, **AUC 0.80** on CVPR 2022 mirror (~6,000 dogs) |
+| Nose detector (YOLOv8n) | `backend/models/nose_detector.onnx` | **Promoted 10 Nov 2026** from `merged_v1` retrain — val mAP50 **0.54057** (≈ prior 0.54); prior test mAP50 **0.68**; close-up recall ~**70%** with pad + retry. Rollback: `nose_detector.prev.onnx` |
+| Embedding (ResNet50 + ArcFace) | `backend/models/embedding_model.onnx` | Gallery-probe **rank-1 78.6%**, **AUC 0.803** on CVPR mirror (~6,000 dogs). Continue-train experiment **did not beat baseline** (AUC 0.800 / R1 78.3%) → **not promoted**. See [`ML_CHANGELOG_2026-11-09.md`](./ML_CHANGELOG_2026-11-09.md) |
 
 **Production thresholds (from our ROC, not a guess):**
 
@@ -90,19 +91,19 @@ Phone camera → JPEG upload
 
 ## 3. What is still required (non-ML / ops / pilot)
 
-These are **not** “retrain the model,” but they are still needed for a clean senior / PawFriend demo.
+Live tracker for this pass: [`OPS_COMPLETION_STATUS.md`](./OPS_COMPLETION_STATUS.md).
 
-| # | Item | Why |
-|---|------|-----|
-| 1 | **Purge junk dogs** in Staff → Registry cleanup | Old keyboard/garbage registrations pollute matching |
-| 2 | **Rebuild tunnel** after UI changes (`npm run tunnel`) + hard-refresh phone | Stale `dist/` shows old capture UX |
-| 3 | Run **acceptance checks** (keyboard reject; real nose accept; look soft-warn) | Prove gates on a real phone over HTTPS |
-| 4 | Decide **strict demo** (`MATCH_STRICT_DEMO`) and optional **DB wipe** | Cleaner senior demos |
-| 5 | **Phase 4 hosting** (Cloud Run / durable R2 photos / `DEBUG=false`) | Stable public URL beyond local Cloudflare |
-| 6 | **Closed pilot:** 10–20 real dogs with good captures | Field evidence; feeds fine-tune later |
-| 7 | Optional: WhatsApp notify, custom domain `id.pawfriend.in` | Deferred / Phase B |
+| # | Item | Status (10 Nov 2026) |
+|---|------|----------------------|
+| 1 | **Purge junk dogs** | **Done** — deleted 12 junk/incomplete (incl. Jack); kept **Max** (2 prints) + **Ness** (3). Orphan owners cleaned |
+| 2 | **Rebuild tunnel** | **Done locally** — `npm run tunnel` on `:5173`. Hard-refresh phone still on you |
+| 3 | **Acceptance checks** | **Partial** — pytest 50/50 + local API junk gates pass. Real-phone HTTPS still needed |
+| 4 | **Strict demo / DB wipe** | **Strict = ON** (`MATCH_STRICT_DEMO=true`). Targeted purge done (not full wipe) |
+| 5 | **Phase 4 hosting** | **Blocked** — no `gcloud`; Docker Desktop engine not running |
+| 6 | **Closed pilot:** 10–20 real dogs | **Not started** — needs consent captures |
+| 7 | Optional: WhatsApp / `id.pawfriend.in` | Deferred / Phase B |
 
-Until junk is purged and acceptance is run, demos can still look bad even though gates exist in code.
+**DB:** Supabase restored — `/health` = `healthy` / `database: connected`. See [`OPS_COMPLETION_STATUS.md`](./OPS_COMPLETION_STATUS.md).
 
 ---
 
@@ -110,13 +111,15 @@ Until junk is purged and acceptance is run, demos can still look bad even though
 
 Current models are **usable for a gated demo**, but accuracy and field robustness need more training / data. This is **Phase G4 / post-internship stretch** in the plans.
 
+**Done (Free Public Track, 9–10 Nov 2026):** detector retrain on `merged_v1` → promoted; embedding continue-train on CVPR-only → **no win** (kept baseline). Live status / decision: [`TRAINING_LIVE.md`](./TRAINING_LIVE.md) · [`CURRENT_PROGRESS.md`](./CURRENT_PROGRESS.md).
+
 ### 4.1 Priority training work
 
 | Priority | Work | Goal | Data needed |
 |----------|------|------|-------------|
-| **P0** | **Fine-tune embedding** on real PawFriend / pilot dogs | Move toward CVPR-style AUC (≥ **0.86** target); reduce false matches in the field | **≥ 50 dogs**, ideally 5–10 close nose photos each (same dog, different angles/light) |
+| **P0** | **Fine-tune embedding** on real PawFriend / pilot dogs | Move toward CVPR-style AUC (≥ **0.86** target); reduce false matches in the field | **≥ 50 dogs**, ideally 5–10 close nose photos each (same dog, different angles/light) — CVPR-only continue-train already tried and did not improve |
 | **P0** | **Re-calibrate ROC thresholds** after fine-tune | New `MATCH_THRESHOLD` / `MATCH_THRESHOLD_LOW` from *our* val set | Held-out gallery/probe split from the new data |
-| **P1** | **Improve YOLO detector** on phone close-ups | Fewer “no nose” / wrong-box cases on muddy, angled, pink noses | Extra labeled nose boxes from real phone photos (`ml/data/detector/phone-test/` + new labels) |
+| **P1** | **Phone close-up YOLO QA / labels** | Confirm promoted detector on real phones; fix residual misses | Extra labeled nose boxes from real phone photos (`ml/data/detector/phone-test/` + new labels) |
 | **P1** | Visual QA on **20+ real phone photos** | Confirm crops look like leather before claiming field-ready | Put files in `ml/data/detector/phone-test/` |
 | **P2** | Optional **animal / “is dog nose” classifier** | Harder reject of fur, screens, non-dog (beyond classical heuristics) | Labeled nose vs non-nose set |
 | **P2** | Open-set calibration | Better “this dog is not in the DB” behavior | Impostor / unknown-dog scans |

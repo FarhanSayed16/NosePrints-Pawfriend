@@ -6,10 +6,14 @@ Do **not** quote 98–99% as NosePrints production accuracy. Those figures come 
 
 | Model | Data | Result |
 |---|---|---|
-| YOLOv8n nose detector | Roboflow Dog_nose YOLOv8 | val mAP50 **0.54**, test mAP50 **0.68**; labeled close-up recall improved to **~70%** with pad + lower-conf retry |
-| ResNet50 + ArcFace embedding | CVPR 2022 Pet Biometric Challenge mirror (6,000 dogs) | gallery-probe **rank-1 78.6%**, **AUC 0.80** |
+| YOLOv8n nose detector | `merged_v1` (Roboflow + synthetic negs + augs) — **promoted 10 Nov 2026** | val mAP50 **0.54057** (matches prior ~0.54); prior test mAP50 **0.68**; close-up recall ~**70%** with pad + retry |
+| ResNet50 + ArcFace embedding | CVPR 2022 Pet Biometric Challenge mirror (6,000 dogs) | gallery-probe **rank-1 78.6%**, **AUC 0.803** — **kept in production** |
 
 Source file: `ml/eval_results/embedding/metrics.txt`
+
+### Free Public Track experiment (9–10 Nov 2026)
+
+Continue-train from `best_model.baseline.pt` (30 epochs, LR `1e-4`) → **AUC 0.800 / Rank-1 78.3%** — slight regression → **not promoted**. Candidate ONNX kept at `backend/models/embedding_model.candidate.onnx`. Details: [`ML_CHANGELOG_2026-11-09.md`](./ML_CHANGELOG_2026-11-09.md).
 
 ## Thresholds in production
 
