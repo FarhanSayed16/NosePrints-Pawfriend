@@ -3,7 +3,7 @@
 **Date:** 10 November 2026  
 **Purpose:** Single handoff document for humans + ChatGPT. Describes **exactly what the system is today**, what training/ops finished, honest accuracy, and a prioritized plan to make it **more accurate and robust**.  
 **Repo:** `D:\NosePrints-Pawfriend`  
-**Related:** `PROJECT_STATUS.md` · `ACCURACY.md` · `ML_CHANGELOG_2026-11-09.md` · `OPS_COMPLETION_STATUS.md` · `GARBAGE_PHOTO_FALSE_MATCH_PLAN.md` · `ML_ENHANCEMENT_MASTER_PLAN.md`
+**Related:** `PROJECT_STATUS.md` · `ACCURACY.md` · `ML_CHANGELOG_2026-11-09.md` · `OPS_COMPLETION_STATUS.md` · `GARBAGE_PHOTO_FALSE_MATCH_PLAN.md` · `ML_ENHANCEMENT_MASTER_PLAN.md` · **`NEXT_INDEX_AND_CHATGPT_AUDIT_RESPONSE.md`** (exact next steps after ChatGPT review)
 
 ---
 

@@ -1,61 +1,75 @@
-# Dataset & Model Inventory (Phase 0 freeze)
+# Dataset & Model Inventory (refreshed 10 Nov 2026)
 
-**Frozen:** 9 November 2026  
-**Track:** ML Accuracy Enhancement — Free Public Track  
-**GPU:** NVIDIA GeForce RTX 4050 Laptop GPU, 6141 MiB  
-**Torch:** 2.6.0+cu124, CUDA available
-
----
-
-## Model artifacts (SHA256)
-
-| File | Bytes | SHA256 |
-|------|------:|--------|
-| `backend/models/nose_detector.onnx` | 12,265,315 | `D0DD3FCE839D1E0223CF83D71ADD4EF3DB24B7B287D108F4880A566FA18AF0D2` |
-| `backend/models/embedding_model.onnx` | 104,475,221 | `F17888A35CBB7E39DE40320E23E24440286E7E52D07E4CB38002C32C1FFA2F9D` |
-| `ml/checkpoints/embedding/best_model.pt` | 338,665,730 | `1ECAA2368DE4DCFFD55F14C7EC94531A64323FD0FA1245012DDE17A659BB0886` |
-
-Rollback copies created in later phases as `*.prev.onnx` / `best_model.baseline.pt`.
+**Track:** Index 3 audit (non-destructive)  
+**GPU:** NVIDIA GeForce RTX 4050 Laptop GPU (~6 GB)  
+**Rule:** Face / pose / landmark datasets ≠ nose-print biometric identity data.
 
 ---
 
-## Identity dataset (embedding / ArcFace)
+## Model artifacts (production frozen)
 
-| Split | Dog folders | Images |
-|-------|------------:|-------:|
-| `ml/data/identity/train` | 6000 | 13956 |
-| `ml/data/identity/val` | 6000 | 6044 |
+| File | Role |
+|------|------|
+| `backend/models/nose_detector.onnx` | Production detector (merged_v1, mAP50 0.54057) |
+| `backend/models/nose_detector.prev.onnx` | Rollback |
+| `backend/models/embedding_model.onnx` | Production embedding (baseline) |
+| `backend/models/embedding_model.prev.onnx` | Rollback copy |
+| `backend/models/embedding_model.candidate.onnx` | Continued-train candidate — **not production** |
+| `ml/checkpoints/embedding/best_model.baseline.pt` | Torch baseline for offline eval |
+| `ml/eval_results/embedding/metrics.txt` | AUC 0.8027 · Rank-1 0.7856 |
 
-Source: CVPR 2022 Pet Biometric Challenge mirror (see DATA_LICENSES.md).
-
----
-
-## Detector dataset (YOLOv8 nose boxes)
-
-Base: `ml/data/detector/dog_nose_yolov8/` (Roboflow Dog_nose v4)
-
-| Split | Images | Labels |
-|-------|-------:|-------:|
-| train | 4313 | 4313 |
-| valid | 340 | 340 |
-| test | 40 | 40 |
-| **Total** | **4693** | **4693** |
-
-Class: `dog-nose` (nc=1). Export resized 640×640 stretch. Licence: CC BY 4.0 (Roboflow Universe).
+ONNX↔Torch parity (Experiment A, 32 images): mean cosine **0.999999** → Torch baseline OK as production-equivalent offline substitute.
 
 ---
 
-## Baseline embedding metrics (frozen copy)
+## On disk today
 
-File: `ml/eval_results/embedding/metrics_baseline_2026-08.txt` (copy of `metrics.txt`)
+### Identity / ArcFace (Group A)
 
-| Metric | Value |
-|--------|------:|
-| AUC | 0.802713 |
-| Rank-1 | 0.785572 |
-| T_high (FAR~5%) | 0.558650 |
-| T_low (FAR~20%) | 0.505441 |
-| Protocol | gallery-probe |
-| Probes / Gallery images | 6044 / 13956 |
+| Source | Path | Dogs | Images | Nose-print ID labels | Already have? | Commercial notes |
+|--------|------|-----:|-------:|:--------------------:|:-------------:|------------------|
+| CVPR 2022 Pet Biometric mirror | `ml/data/identity/{train,val}` | 6000 | 13956 + 6044 | Yes | **Yes** | Reuse on-disk; see `DATA_LICENSES.md` |
+| PawFriend pilot | `ml/data/identity/pawfriend/` | 0 | 0 | — | **No** | Highest priority to collect |
+| Continued-train outputs | `ml/checkpoints/embedding_continued_v1/` | — | — | — | Yes (failed promote) | Do not use as baseline |
 
-Prior detector notes (docs): val mAP50 ~0.54, test mAP50 ~0.68.
+### Detector / YOLO (Group B)
+
+| Source | Path | Images | Labels | Nose leather boxes | Already have? |
+|--------|------|-------:|-------:|:------------------:|:-------------:|
+| Roboflow Dog_nose v4 | `ml/data/detector/dog_nose_yolov8/` | 4693 | 4693 | Yes | **Yes** (CC BY 4.0) |
+| Synthetic negatives | `ml/data/detector/negatives/` | 240 | n/a | Hard-neg style | **Yes** |
+| Merged v1 | `ml/data/detector/merged_v1/` | 6133 | YOLO | Yes + negs/augs | **Yes** |
+| Phone-test fixtures | `ml/data/detector/phone-test/` | synthetic junk set | — | For gate smoke | Partial (not real phones) |
+
+---
+
+## External candidates (audit only — do not auto-download paid/restricted)
+
+| Dataset | Nose-print biometric? | Identity labels? | Boxes / keypoints / seg | YOLO useful? | ArcFace useful? | Licence / status | Action |
+|---------|:---------------------:|:----------------:|-------------------------|:------------:|:---------------:|------------------|--------|
+| **CVPR 2022 / Kaggle zekunn** | Yes | Yes | Crops/challenge format | Indirect | **Yes** | Challenge/Kaggle terms | **Keep existing** — do not duplicate |
+| **Nexdata Dog Nose Print** | Yes (claimed) | Yes (~1073 dogs) | Seg masks claimed | Possible | Possible | **Paid commercial** | Sample + quote only — **no purchase** |
+| **StanfordExtra** | No (dog instances) | No biometric IDs | Keypoints + seg | Weak (nose keypoint ≠ leather box) | No | Mixed image rights | Defer research |
+| **Animal-Pose** | No | No | 20 keypoints incl. nose | Weak | No | Check sources | Defer |
+| **Ultralytics Dog-Pose** | No | No | Nose keypoint | Weak | No | Ultralytics dataset terms | Defer |
+| **Zenodo Pet Face** | No (face) | No nose-print IDs | Face box + eye/nose landmarks | Weak | No | Licence field unclear | Defer / seek permission |
+| **Oxford-IIIT Pet** | No | Breed-level | Head boxes / seg | Weak | No | CC BY-SA style attribution | Defer |
+| **PetFace** | No (face IDs) | Face IDs | Face | No for nose ID | No | **Non-commercial** | **Blocked** for product |
+
+**Distinction enforced:** dog face photo ≠ nose landmark ≠ nose-leather biometric print.
+
+---
+
+## Duplication risk
+
+Re-downloading Kaggle CVPR mirrors into `ml/data/identity` would **duplicate** the prepared 6000-ID tree. Do not.
+
+---
+
+## Recommended acquisition order
+
+1. **PawFriend consented phone captures** (not a download)  
+2. Nexdata **sample** (if Farhan requests)  
+3. Optional pose sets only if phone-test proves YOLO leather-box failures need keypoint pretraining  
+
+See `DATA_LICENSES.md` for approval status.
