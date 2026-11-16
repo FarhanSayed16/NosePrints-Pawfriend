@@ -17,12 +17,15 @@ from app.models.database import StaffUser
 bearer_scheme = HTTPBearer(auto_error=True)
 optional_bearer = HTTPBearer(auto_error=False)
 
+STAFF_WRITE_ROLES = frozenset({"staff", "admin"})
+ADMIN_ROLES = frozenset({"admin"})
+
 
 async def get_current_staff(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> StaffUser:
-    """Require a valid staff JWT. Used on owner PII and match confirmation."""
+    """Require a valid active staff JWT."""
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Staff login required",
@@ -46,6 +49,11 @@ async def get_current_staff(
     staff = result.scalar_one_or_none()
     if staff is None:
         raise credentials_exc
+    if not getattr(staff, "is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff account is deactivated",
+        )
     return staff
 
 
@@ -60,3 +68,27 @@ async def get_optional_staff(
         return await get_current_staff(credentials, db)
     except HTTPException:
         return None
+
+
+async def require_staff_write(
+    staff: StaffUser = Depends(get_current_staff),
+) -> StaffUser:
+    """Confirm/reject matches — staff or admin (not viewer)."""
+    if staff.role not in STAFF_WRITE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff or admin role required",
+        )
+    return staff
+
+
+async def require_admin(
+    staff: StaffUser = Depends(get_current_staff),
+) -> StaffUser:
+    """Admin-only: invite, delete registry, DPDP erase, role changes."""
+    if staff.role not in ADMIN_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+    return staff

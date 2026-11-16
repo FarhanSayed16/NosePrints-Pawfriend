@@ -68,6 +68,7 @@ async def _bootstrap_staff_from_env() -> None:
                 email=email,
                 password_hash=hash_password(password),
                 role="admin",
+                is_active=True,
             )
         )
         await session.commit()

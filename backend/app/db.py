@@ -99,3 +99,18 @@ async def init_db():
                 "ADD COLUMN IF NOT EXISTS query_appearance_url TEXT"
             )
         )
+        await conn.execute(
+            text(
+                "ALTER TABLE staff_users "
+                "ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ")
+        )
+        await conn.execute(
+            text("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS region VARCHAR(100)")
+        )
+        await conn.execute(
+            text("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS shelter_code VARCHAR(64)")
+        )

@@ -123,13 +123,21 @@ class Settings(BaseSettings):
     RATE_LIMIT_UPLOAD_PER_MINUTE: int = 30
     RATE_LIMIT_FOUND_INTAKE_PER_MINUTE: int = 10
 
-    # ── Email (optional; confirmed-match owner notify) ──
+    # ── Email (optional; confirmed-match owner notify + staff invite/reset) ──
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     SMTP_FROM: Optional[str] = None
     SMTP_USE_TLS: bool = True
+
+    # Public web origin for invite/reset links (e.g. https://id.pawfriend.in)
+    PUBLIC_APP_URL: Optional[str] = None
+    STAFF_INVITE_EXPIRY_HOURS: int = 72
+    STAFF_RESET_EXPIRY_HOURS: int = 2
+
+    # Auth endpoint rate limits (login / reset / invite accept)
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 20
 
     # ── Consent ──
     CONSENT_TEXT_VERSION: str = "v1"

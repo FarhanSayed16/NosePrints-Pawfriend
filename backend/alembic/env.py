@@ -11,7 +11,10 @@ from app.config import settings  # noqa: E402
 from app.models.database import Base  # noqa: E402
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
+# ConfigParser treats % as interpolation — escape passwords like %40
+config.set_main_option(
+    "sqlalchemy.url", settings.DATABASE_URL_SYNC.replace("%", "%%")
+)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
