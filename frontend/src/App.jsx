@@ -11,6 +11,8 @@ import LostDogs from "./pages/LostDogs";
 import FoundIntake from "./pages/FoundIntake";
 import ReportLost from "./pages/ReportLost";
 import Staff from "./pages/Staff";
+import StaffAcceptInvite from "./pages/StaffAcceptInvite";
+import StaffResetPassword from "./pages/StaffResetPassword";
 import "./index.css";
 
 function App() {
@@ -26,6 +28,8 @@ function App() {
         <Route path="/found" element={<FoundIntake />} />
         <Route path="/report-lost/:dogId" element={<ReportLost />} />
         <Route path="/staff" element={<Staff />} />
+        <Route path="/staff/accept-invite" element={<StaffAcceptInvite />} />
+        <Route path="/staff/reset-password" element={<StaffResetPassword />} />
       </Routes>
       <Footer />
       <UpdatePrompt />
