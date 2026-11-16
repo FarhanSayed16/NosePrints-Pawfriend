@@ -27,6 +27,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _limit_for(self, path: str, method: str) -> int | None:
         if method != "POST":
             return None
+        if path in (
+            "/api/v1/auth/login",
+            "/api/v1/auth/bootstrap",
+            "/api/v1/auth/request-password-reset",
+            "/api/v1/auth/reset-password",
+            "/api/v1/auth/accept-invite",
+        ):
+            return settings.RATE_LIMIT_AUTH_PER_MINUTE
         if path == "/api/v1/match/identify":
             return settings.RATE_LIMIT_IDENTIFY_PER_MINUTE
         if path == "/api/v1/match/detect-preview":
@@ -44,6 +52,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _bucket_path(self, path: str) -> str:
         if path.startswith("/api/v1/noseprints/upload"):
             return "/api/v1/noseprints/upload"
+        if path.startswith("/api/v1/auth/"):
+            return "/api/v1/auth"
         return path
 
     async def dispatch(self, request: Request, call_next):

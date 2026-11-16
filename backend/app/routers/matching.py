@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.deps import get_current_staff
+from app.deps import get_current_staff, require_staff_write
 from app.models.database import StaffUser
+from app.services.audit import record_audit
 from app.schemas import DetectPreviewResponse, MatchConfirmation, MatchConfirmResponse, MatchQueueItem, MatchResponse
 from app.services import (
     confirm_match,
@@ -279,11 +280,12 @@ async def match_queue(
 async def confirm_match_result(
     data: MatchConfirmation,
     db: AsyncSession = Depends(get_db),
-    staff: StaffUser = Depends(get_current_staff),
+    staff: StaffUser = Depends(require_staff_write),
 ):
     """
     Staff confirms or rejects a match.
     Owner contact is returned only when confirmed=true.
+    Viewers cannot decide.
     """
     try:
         result = await confirm_match(
@@ -292,6 +294,13 @@ async def confirm_match_result(
             confirmed=data.confirmed,
             confirmed_by=staff.id,
             staff_notes=data.staff_notes,
+        )
+        await record_audit(
+            db,
+            action="match.confirm" if data.confirmed else "match.reject",
+            actor_staff_id=staff.id,
+            resource_type="match_log",
+            resource_id=data.match_log_id,
         )
         return result
     except ValueError as e:

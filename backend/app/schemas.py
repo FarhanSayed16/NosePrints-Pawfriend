@@ -76,6 +76,8 @@ class DogCreate(BaseModel):
     approx_dob: Optional[date] = None
     microchip_id: Optional[str] = Field(None, max_length=50)
     status: str = Field(default="registered", pattern="^(registered|lost|found)$")
+    region: Optional[str] = Field(None, max_length=100)
+    shelter_code: Optional[str] = Field(None, max_length=64)
 
     @field_validator("breed", "color", mode="before")
     @classmethod
@@ -105,6 +107,8 @@ class DogResponse(BaseModel):
     found_notes: Optional[str] = None
     listed_as_found_at: Optional[datetime] = None
     profile_photo_url: Optional[str] = None
+    region: Optional[str] = None
+    shelter_code: Optional[str] = None
     nose_print_count: int = 0
     created_at: datetime
 
@@ -114,6 +118,8 @@ class DogResponse(BaseModel):
 class DogUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255)
     breed: Optional[str] = Field(None, max_length=100)
+    region: Optional[str] = Field(None, max_length=100)
+    shelter_code: Optional[str] = Field(None, max_length=64)
     color: Optional[str] = Field(None, max_length=100)
     sex: Optional[str] = Field(None, max_length=10)
     approx_dob: Optional[date] = None
@@ -243,6 +249,9 @@ class MatchQueueItem(BaseModel):
     query_appearance_url: Optional[str] = None
     appearance_score: Optional[float] = None
     appearance_hint: str = "unavailable"
+    consent_text_version: Optional[str] = None
+    region: Optional[str] = None
+    shelter_code: Optional[str] = None
 
 
 class MatchConfirmResponse(BaseModel):
@@ -322,6 +331,9 @@ class RegistrationResponse(BaseModel):
 # Staff Auth
 # ────────────────────────────────────────────
 
+STAFF_ROLES = ("viewer", "staff", "admin")
+
+
 class StaffLoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=72)
@@ -339,6 +351,69 @@ class StaffMeResponse(BaseModel):
     staff_id: UUID
     email: str
     role: str
+    is_active: bool = True
+
+
+class StaffInviteCreate(BaseModel):
+    email: EmailStr
+    role: str = Field(default="staff", pattern="^(viewer|staff|admin)$")
+
+
+class StaffInviteResponse(BaseModel):
+    id: UUID
+    email: str
+    role: str
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    email_sent: bool = False
+    # Present when SMTP is unset (staging) so admin can copy the link
+    accept_url: Optional[str] = None
+
+
+class StaffAcceptInviteRequest(BaseModel):
+    token: str = Field(..., min_length=16)
+    password: str = Field(..., min_length=8, max_length=72)
+
+
+class StaffPasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class StaffPasswordResetConfirm(BaseModel):
+    token: str = Field(..., min_length=16)
+    password: str = Field(..., min_length=8, max_length=72)
+
+
+class StaffPasswordResetResponse(BaseModel):
+    message: str
+    email_sent: bool = False
+    # Staging-only when SMTP unset
+    reset_url: Optional[str] = None
+
+
+class StaffListItem(BaseModel):
+    staff_id: UUID
+    email: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
+
+class StaffRoleUpdate(BaseModel):
+    role: str = Field(..., pattern="^(viewer|staff|admin)$")
+
+
+class AuditLogItem(BaseModel):
+    id: UUID
+    actor_staff_id: Optional[UUID] = None
+    action: str
+    resource_type: Optional[str] = None
+    resource_id: Optional[str] = None
+    detail: Optional[str] = None
+    ip_address: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 # ────────────────────────────────────────────

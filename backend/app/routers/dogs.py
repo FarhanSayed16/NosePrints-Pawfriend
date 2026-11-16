@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
-from app.deps import get_current_staff, get_optional_staff
+from app.deps import get_current_staff, get_optional_staff, require_admin
 from app.models.database import Dog, NosePrint, StaffUser
 from app.config import settings
 from app.schemas import (
@@ -23,6 +23,7 @@ from app.schemas import (
     ReportLostRequest,
 )
 from app.services import embedding_extractor, storage_service
+from app.services.audit import record_audit
 
 router = APIRouter(prefix="/dogs", tags=["Dogs"])
 
@@ -46,6 +47,8 @@ def _dog_to_response(dog: Dog, nose_print_count: int = 0, *, staff_view: bool = 
         found_notes=dog.found_notes if staff_view else None,
         listed_as_found_at=dog.listed_as_found_at,
         profile_photo_url=dog.profile_photo_url,
+        region=getattr(dog, "region", None),
+        shelter_code=getattr(dog, "shelter_code", None),
         nose_print_count=nose_print_count,
         created_at=dog.created_at,
     )
@@ -63,6 +66,8 @@ async def create_dog(data: DogCreate, db: AsyncSession = Depends(get_db)):
         approx_dob=data.approx_dob,
         microchip_id=data.microchip_id,
         status=data.status,
+        region=data.region,
+        shelter_code=data.shelter_code,
     )
     db.add(dog)
     await db.flush()
@@ -75,6 +80,8 @@ async def list_dogs(
     color: str | None = Query(None, description="Filter by color"),
     status_filter: str | None = Query(None, alias="status", description="Filter by status: registered/lost/found"),
     name: str | None = Query(None, description="Search by name (partial match)"),
+    region: str | None = Query(None, description="Filter by region"),
+    shelter_code: str | None = Query(None, description="Filter by shelter code"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -94,6 +101,10 @@ async def list_dogs(
         query = query.where(Dog.status == status_filter)
     if name:
         query = query.where(Dog.name.ilike(f"%{name}%"))
+    if region:
+        query = query.where(Dog.region.ilike(f"%{region}%"))
+    if shelter_code:
+        query = query.where(Dog.shelter_code.ilike(f"%{shelter_code}%"))
 
     # Pagination
     offset = (page - 1) * per_page
@@ -432,9 +443,9 @@ async def report_dog_lost(
 async def delete_dog(
     dog_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _: StaffUser = Depends(get_current_staff),
+    staff: StaffUser = Depends(require_admin),
 ):
-    """Delete a dog, associated nose prints, match logs, and stored photos. Staff only."""
+    """Delete a dog, associated nose prints, match logs, and stored photos. Admin only."""
     from app.models.database import MatchLog
 
     result = await db.execute(
@@ -461,7 +472,16 @@ async def delete_dog(
             urls.append(log.query_appearance_url)
         await db.delete(log)
 
+    label = dog.name or str(dog.id)
     await db.delete(dog)
+    await record_audit(
+        db,
+        action="dog.delete",
+        actor_staff_id=staff.id,
+        resource_type="dog",
+        resource_id=dog_id,
+        detail={"name": label},
+    )
     # Deduplicate URLs; best-effort storage cleanup after DB delete
     for url in dict.fromkeys(urls):
         await storage_service.delete_image(url)

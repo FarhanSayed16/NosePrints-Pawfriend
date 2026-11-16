@@ -8,14 +8,15 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db import get_db
-from app.deps import get_current_staff
+from app.deps import get_current_staff, require_admin
 from app.models.database import Dog, Owner, StaffUser
+from app.services.audit import record_audit
 from app.schemas import OwnerCreate, OwnerResponse, OwnerUpdate
 from app.services import storage_service
 
@@ -45,13 +46,20 @@ async def create_owner(data: OwnerCreate, db: AsyncSession = Depends(get_db)):
 async def list_owners(
     page: int = 1,
     per_page: int = 20,
+    q: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: StaffUser = Depends(get_current_staff),
 ):
     """List all owners with pagination. Staff only — contains phone/email."""
     offset = (page - 1) * per_page
+    query = select(Owner)
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.where(
+            or_(Owner.name.ilike(term), Owner.email.ilike(term), Owner.phone.ilike(term))
+        )
     result = await db.execute(
-        select(Owner).offset(offset).limit(per_page).order_by(Owner.created_at.desc())
+        query.offset(offset).limit(min(per_page, 100)).order_by(Owner.created_at.desc())
     )
     return result.scalars().all()
 
@@ -95,12 +103,13 @@ async def update_owner(
 async def delete_owner(
     owner_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _: StaffUser = Depends(get_current_staff),
+    staff: StaffUser = Depends(require_admin),
 ):
     """
     Delete owner and all associated data.
     DPDP Act compliance: supports full data erasure on request.
     Cascade deletes dogs and their nose prints, and removes stored photos.
+    Admin only — audited.
     """
     result = await db.execute(
         select(Owner)
@@ -119,6 +128,14 @@ async def delete_owner(
             if print_row.image_url:
                 urls.append(print_row.image_url)
 
+    await record_audit(
+        db,
+        action="owner.erase",
+        actor_staff_id=staff.id,
+        resource_type="owner",
+        resource_id=owner_id,
+        detail={"email": owner.email, "dogs": len(owner.dogs)},
+    )
     await db.delete(owner)
     for url in urls:
         await storage_service.delete_image(url)

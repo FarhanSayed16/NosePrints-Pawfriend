@@ -77,6 +77,8 @@ class Dog(Base):
     found_notes = Column(Text, nullable=True)
     listed_as_found_at = Column(DateTime(timezone=True), nullable=True)
     profile_photo_url = Column(Text, nullable=True)
+    region = Column(String(100), nullable=True)  # lightweight regional ops filter
+    shelter_code = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -88,6 +90,8 @@ class Dog(Base):
     __table_args__ = (
         Index("ix_dogs_status", "status"),
         Index("ix_dogs_breed", "breed"),
+        Index("ix_dogs_region", "region"),
+        Index("ix_dogs_shelter_code", "shelter_code"),
     )
 
 
@@ -148,5 +152,54 @@ class StaffUser(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
-    role = Column(String(20), nullable=False, default="staff")  # staff | admin
+    role = Column(String(20), nullable=False, default="staff")  # viewer | staff | admin
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class StaffInvite(Base):
+    """One-time invite for new staff (admin-created)."""
+
+    __tablename__ = "staff_invites"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), nullable=False, index=True)
+    role = Column(String(20), nullable=False, default="staff")
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class PasswordResetToken(Base):
+    """One-time staff password reset token."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    staff_id = Column(UUID(as_uuid=True), ForeignKey("staff_users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AuditLog(Base):
+    """Structured ops audit trail for nationwide accountability."""
+
+    __tablename__ = "audit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    actor_staff_id = Column(UUID(as_uuid=True), ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String(64), nullable=False, index=True)
+    resource_type = Column(String(64), nullable=True)
+    resource_id = Column(String(64), nullable=True)
+    detail = Column(Text, nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
