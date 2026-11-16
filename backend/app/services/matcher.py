@@ -375,6 +375,7 @@ async def list_match_queue(
     items = []
     for match_log, dog in rows:
         matched_image_url = None
+        consent_version = None
         if dog:
             np_result = await db.execute(
                 select(NosePrint.image_url)
@@ -383,6 +384,14 @@ async def list_match_queue(
                 .limit(1)
             )
             matched_image_url = np_result.scalar_one_or_none()
+            if dog.owner_id:
+                from app.models.database import Owner
+
+                owner = (
+                    await db.execute(select(Owner).where(Owner.id == dog.owner_id))
+                ).scalar_one_or_none()
+                if owner:
+                    consent_version = owner.consent_text_version
 
         items.append(
             MatchQueueItem(
@@ -401,6 +410,9 @@ async def list_match_queue(
                 matched_image_url=matched_image_url,
                 profile_photo_url=dog.profile_photo_url if dog else None,
                 query_appearance_url=match_log.query_appearance_url,
+                consent_text_version=consent_version,
+                region=getattr(dog, "region", None) if dog else None,
+                shelter_code=getattr(dog, "shelter_code", None) if dog else None,
             )
         )
     return items
