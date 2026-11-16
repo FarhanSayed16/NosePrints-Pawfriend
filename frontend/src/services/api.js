@@ -63,8 +63,8 @@ export const registerOwnerAndDog = (data) => api.post("/register", data);
 
 // ── Owners (list/get/update/delete require staff JWT) ──
 export const createOwner = (data) => api.post("/owners/", data);
-export const getOwners = (page = 1) =>
-  api.get("/owners/", { params: { page } });
+export const getOwners = (page = 1, params = {}) =>
+  api.get("/owners/", { params: { page, per_page: 50, ...params } });
 export const getOwner = (id) => api.get(`/owners/${id}`);
 export const updateOwner = (id, data) => api.patch(`/owners/${id}`, data);
 export const deleteOwner = (id) => api.delete(`/owners/${id}`);
@@ -152,6 +152,18 @@ export const confirmMatch = (data) => api.post("/match/confirm", data);
 export const staffLogin = (data) => api.post("/auth/login", data);
 export const staffBootstrap = (data) => api.post("/auth/bootstrap", data);
 export const staffMe = () => api.get("/auth/me");
+export const staffInvite = (data) => api.post("/auth/invite", data);
+export const staffListInvites = () => api.get("/auth/invites");
+export const staffAcceptInvite = (data) => api.post("/auth/accept-invite", data);
+export const staffRequestPasswordReset = (data) =>
+  api.post("/auth/request-password-reset", data);
+export const staffResetPassword = (data) => api.post("/auth/reset-password", data);
+export const staffList = () => api.get("/auth/staff");
+export const staffUpdateRole = (staffId, data) =>
+  api.patch(`/auth/staff/${staffId}/role`, data);
+export const staffDeactivate = (staffId) =>
+  api.post(`/auth/staff/${staffId}/deactivate`);
+export const staffAuditLogs = (params = {}) => api.get("/auth/audit", { params });
 
 export function setStaffToken(token) {
   if (token) localStorage.setItem("staff_token", token);
