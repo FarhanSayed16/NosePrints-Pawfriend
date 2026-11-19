@@ -6,11 +6,10 @@ const MIN_NORM = 0.05;
 const MIN_PX_SOFT = 96;
 const CORNER_HANDLES = ["nw", "ne", "se", "sw"];
 const EDGE_HANDLES = ["n", "e", "s", "w"];
-const NUDGE = 0.015;
+const NUDGE = 0.018;
 
 function defaultBox() {
-  // Tighter default — encourage nose leather, not whole face
-  return { x1: 0.32, y1: 0.32, x2: 0.68, y2: 0.68 };
+  return { x1: 0.38, y1: 0.32, x2: 0.62, y2: 0.56 };
 }
 
 function clampBox(next) {
@@ -23,11 +22,10 @@ function clampBox(next) {
 
 export default function NoseCropEditor({ imageUrl, initialBox, message, onConfirm, onCancel }) {
   const imgRef = useRef(null);
-  const stageRef = useRef(null);
+  const frameRef = useRef(null);
   const [box, setBox] = useState(initialBox || defaultBox());
   const [preview, setPreview] = useState(null);
   const [warn, setWarn] = useState("");
-  const [showFine, setShowFine] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const dragRef = useRef(null);
   const pinchRef = useRef(null);
@@ -35,13 +33,15 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
   const boxRef = useRef(box);
   boxRef.current = box;
 
+  const found = Boolean(message && /nose found/i.test(message));
+
   useEffect(() => {
     setBox(initialBox || defaultBox());
   }, [initialBox, imageUrl]);
 
   const clientToNorm = (clientX, clientY) => {
-    const img = imgRef.current;
-    const rect = img.getBoundingClientRect();
+    const frame = frameRef.current;
+    const rect = frame.getBoundingClientRect();
     return {
       x: (clientX - rect.left) / Math.max(rect.width, 1),
       y: (clientY - rect.top) / Math.max(rect.height, 1),
@@ -110,8 +110,8 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
   };
 
   useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return undefined;
+    const frame = frameRef.current;
+    if (!frame) return undefined;
 
     const distance = (t1, t2) => Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
 
@@ -146,69 +146,65 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
       pinchRef.current = null;
     };
 
-    stage.addEventListener("touchstart", onTouchStart, { passive: true });
-    stage.addEventListener("touchmove", onTouchMove, { passive: false });
-    stage.addEventListener("touchend", onTouchEnd);
-    stage.addEventListener("touchcancel", onTouchEnd);
+    frame.addEventListener("touchstart", onTouchStart, { passive: true });
+    frame.addEventListener("touchmove", onTouchMove, { passive: false });
+    frame.addEventListener("touchend", onTouchEnd);
+    frame.addEventListener("touchcancel", onTouchEnd);
     return () => {
-      stage.removeEventListener("touchstart", onTouchStart);
-      stage.removeEventListener("touchmove", onTouchMove);
-      stage.removeEventListener("touchend", onTouchEnd);
-      stage.removeEventListener("touchcancel", onTouchEnd);
+      frame.removeEventListener("touchstart", onTouchStart);
+      frame.removeEventListener("touchmove", onTouchMove);
+      frame.removeEventListener("touchend", onTouchEnd);
+      frame.removeEventListener("touchcancel", onTouchEnd);
     };
   }, []);
-
-  const cropPixels = () => {
-    const img = imgRef.current;
-    if (!img?.naturalWidth) return null;
-    const b = boxRef.current;
-    const sx = Math.round(b.x1 * img.naturalWidth);
-    const sy = Math.round(b.y1 * img.naturalHeight);
-    const sw = Math.max(1, Math.round((b.x2 - b.x1) * img.naturalWidth));
-    const sh = Math.max(1, Math.round((b.y2 - b.y1) * img.naturalHeight));
-    return { sx, sy, sw, sh, img };
-  };
 
   useEffect(() => {
     if (previewTimer.current) clearTimeout(previewTimer.current);
     previewTimer.current = setTimeout(() => {
-      const region = cropPixels();
-      if (!region) return;
-      const { sx, sy, sw, sh, img } = region;
+      const img = imgRef.current;
+      if (!img || !img.naturalWidth) return;
       const canvas = document.createElement("canvas");
-      const size = 88;
-      canvas.width = size;
-      canvas.height = size;
-      canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
-      setPreview(canvas.toDataURL("image/jpeg", 0.7));
-      setWarn(
-        Math.min(sw, sh) < MIN_PX_SOFT
-          ? `Crop is ${sw}×${sh} px — enlarge the box or move closer.`
-          : "",
-      );
+      const sx = box.x1 * img.naturalWidth;
+      const sy = box.y1 * img.naturalHeight;
+      const sw = (box.x2 - box.x1) * img.naturalWidth;
+      const sh = (box.y2 - box.y1) * img.naturalHeight;
+      canvas.width = 120;
+      canvas.height = 120;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 120, 120);
+      setPreview(canvas.toDataURL("image/jpeg", 0.72));
+      const fracW = sw / img.naturalWidth;
+      const fracH = sh / img.naturalHeight;
+      if (Math.min(sw, sh) < MIN_PX_SOFT) {
+        setWarn("Box is small — enlarge so the nose leather fills most of it.");
+      } else if (fracW > 0.42 || fracH > 0.42) {
+        setWarn("Still too wide — tighten onto the black/pink nose only (not eyes or muzzle).");
+      } else {
+        setWarn("");
+      }
     }, 80);
-    return () => {
-      if (previewTimer.current) clearTimeout(previewTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => clearTimeout(previewTimer.current);
   }, [box, imageUrl]);
 
   const confirm = async () => {
     if (confirming) return;
-    const region = cropPixels();
-    if (!region) return;
     setConfirming(true);
     try {
-      const { sx, sy, sw, sh, img } = region;
+      const img = imgRef.current;
       const canvas = document.createElement("canvas");
-      canvas.width = sw;
-      canvas.height = sh;
-      canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      const sx = box.x1 * img.naturalWidth;
+      const sy = box.y1 * img.naturalHeight;
+      const sw = (box.x2 - box.x1) * img.naturalWidth;
+      const sh = (box.y2 - box.y1) * img.naturalHeight;
+      canvas.width = Math.max(1, Math.round(sw));
+      canvas.height = Math.max(1, Math.round(sh));
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-      if (!blob) return;
-      const file = await toJpegFile(blob, "nose-crop.jpg");
+      const file = await toJpegFile(blob, "nose-crop.jpg", { quality: 0.92 });
       onConfirm(file);
-    } finally {
+    } catch {
+      setWarn("Could not create crop — try again.");
       setConfirming(false);
     }
   };
@@ -229,80 +225,87 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
 
   return (
     <div className="crop-editor">
-      <p className="crop-msg">
-        {message || "Pinch to resize · drag the box onto the nose leather only"}
-      </p>
-
-      <div className="crop-stage" ref={stageRef}>
-        <img
-          ref={imgRef}
-          src={imageUrl}
-          alt="Uploaded dog"
-          draggable={false}
-          onLoad={() => setBox((current) => ({ ...current }))}
-        />
-        <div className="crop-dim" style={dim.top} onPointerDown={(e) => beginDrag(e, "move")} />
-        <div className="crop-dim" style={dim.bottom} onPointerDown={(e) => beginDrag(e, "move")} />
-        <div className="crop-dim" style={dim.left} onPointerDown={(e) => beginDrag(e, "move")} />
-        <div className="crop-dim" style={dim.right} onPointerDown={(e) => beginDrag(e, "move")} />
-        <div
-          className="crop-box"
-          style={style}
-          onPointerDown={(e) => beginDrag(e, "move")}
-        >
-          {CORNER_HANDLES.map((h) => (
-            <span
-              key={h}
-              className={`crop-handle ${h}`}
-              onPointerDown={(e) => beginDrag(e, h)}
-            />
-          ))}
-          {EDGE_HANDLES.map((h) => (
-            <span
-              key={h}
-              className={`crop-handle edge ${h}`}
-              onPointerDown={(e) => beginDrag(e, h)}
-            />
-          ))}
-        </div>
+      <div className={`crop-banner ${found ? "ok" : "assist"}`}>
+        <strong>{found ? "Nose found — fine-tune if needed" : "Frame the nose leather"}</strong>
+        <span>{message || "Drag the box onto the black/pink nose only — not eyes or the whole head."}</span>
       </div>
 
-      <div className="crop-toolbar">
-        <button className="crop-chip" type="button" onClick={() => scaleBox(0.82)} aria-label="Smaller">
-          −
-        </button>
-        <button className="crop-chip" type="button" onClick={() => scaleBox(1.18)} aria-label="Larger">
-          +
-        </button>
-        <button
-          className="crop-chip"
-          type="button"
-          onClick={() => setBox(initialBox || defaultBox())}
-        >
-          Reset
-        </button>
-        <button
-          className={`crop-chip ${showFine ? "active" : ""}`}
-          type="button"
-          onClick={() => setShowFine((v) => !v)}
-        >
-          Nudge
-        </button>
-        {preview && <img className="crop-thumb" src={preview} alt="" />}
-      </div>
-
-      {showFine && (
-        <div className="crop-move" role="group" aria-label="Nudge crop box">
-          <button className="crop-chip" type="button" onClick={() => nudge(0, -NUDGE)}>↑</button>
-          <div className="crop-move-mid">
-            <button className="crop-chip" type="button" onClick={() => nudge(-NUDGE, 0)}>←</button>
-            <button className="crop-chip" type="button" onClick={() => nudge(NUDGE, 0)}>→</button>
+      <div className="crop-stage">
+        <div className="crop-frame" ref={frameRef}>
+          <img
+            ref={imgRef}
+            src={imageUrl}
+            alt="Uploaded dog"
+            draggable={false}
+            onLoad={() => setBox((current) => ({ ...current }))}
+          />
+          <div className="crop-dim" style={dim.top} onPointerDown={(e) => beginDrag(e, "move")} />
+          <div className="crop-dim" style={dim.bottom} onPointerDown={(e) => beginDrag(e, "move")} />
+          <div className="crop-dim" style={dim.left} onPointerDown={(e) => beginDrag(e, "move")} />
+          <div className="crop-dim" style={dim.right} onPointerDown={(e) => beginDrag(e, "move")} />
+          <div className="crop-box" style={style} onPointerDown={(e) => beginDrag(e, "move")}>
+            <span className="crop-crosshair" aria-hidden />
+            {CORNER_HANDLES.map((h) => (
+              <span key={h} className={`crop-handle ${h}`} onPointerDown={(e) => beginDrag(e, h)} />
+            ))}
+            {EDGE_HANDLES.map((h) => (
+              <span key={h} className={`crop-handle edge ${h}`} onPointerDown={(e) => beginDrag(e, h)} />
+            ))}
           </div>
-          <button className="crop-chip" type="button" onClick={() => nudge(0, NUDGE)}>↓</button>
         </div>
-      )}
+      </div>
+
+      <div className="crop-controls">
+        <div className="crop-preview-card">
+          {preview ? <img src={preview} alt="" /> : <span className="crop-preview-empty">…</span>}
+          <small>Crop</small>
+        </div>
+
+        <div className="crop-tools">
+          <div className="crop-tool-row" role="group" aria-label="Resize">
+            <button className="crop-tool" type="button" onClick={() => scaleBox(0.8)} title="Smaller">
+              −
+            </button>
+            <button className="crop-tool" type="button" onClick={() => scaleBox(1.2)} title="Larger">
+              +
+            </button>
+            <button className="crop-tool accent" type="button" onClick={() => scaleBox(0.68)}>
+              Tighten
+            </button>
+            <button
+              className="crop-tool"
+              type="button"
+              onClick={() => setBox(initialBox || defaultBox())}
+            >
+              Reset
+            </button>
+          </div>
+
+          <div className="crop-move-block">
+            <span className="crop-move-label">Nudge box</span>
+            <div className="crop-dpad" role="group" aria-label="Move crop box">
+              <button className="crop-dpad-btn up" type="button" onClick={() => nudge(0, -NUDGE)} aria-label="Move up">
+                ↑
+              </button>
+              <button className="crop-dpad-btn left" type="button" onClick={() => nudge(-NUDGE, 0)} aria-label="Move left">
+                ←
+              </button>
+              <button className="crop-dpad-btn center" type="button" disabled aria-hidden>
+                ·
+              </button>
+              <button className="crop-dpad-btn right" type="button" onClick={() => nudge(NUDGE, 0)} aria-label="Move right">
+                →
+              </button>
+              <button className="crop-dpad-btn down" type="button" onClick={() => nudge(0, NUDGE)} aria-label="Move down">
+                ↓
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {warn && <p className="crop-warn">{warn}</p>}
+      <p className="crop-hint">Drag the box or pinch with two fingers. Fill it with nose leather only.</p>
 
       <div className="crop-actions">
         <button className="btn btn-outline" type="button" onClick={onCancel} disabled={confirming}>

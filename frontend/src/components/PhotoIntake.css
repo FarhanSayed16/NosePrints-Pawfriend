@@ -40,15 +40,24 @@
 .intake-error-banner {
   display: flex;
   align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.85rem 1rem;
+  gap: 0.65rem;
+  padding: 0.85rem 0.95rem;
   margin-bottom: 0.85rem;
-  background: #fdecea;
-  border: 1px solid #f5c6cb;
-  border-radius: var(--radius-md);
-  color: var(--clr-danger);
+  background: linear-gradient(135deg, #fff8f6 0%, #fff5f4 100%);
+  border: 1px solid #f0c4b8;
+  border-left: 4px solid #d4533c;
+  border-radius: 12px;
+  color: #7a2e22;
   font-size: 0.88rem;
+  line-height: 1.45;
   overflow-wrap: anywhere;
+  box-shadow: 0 1px 3px rgba(120, 40, 30, 0.05);
+}
+
+.intake-error-banner svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: #d4533c;
 }
 
 .intake-inline-status {

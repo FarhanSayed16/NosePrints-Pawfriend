@@ -106,7 +106,7 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
         const issues = res.data?.issues || [];
         const message =
           issues[0] ||
-          "This crop did not look like a usable dog nose. Retake a close-up of the nose leather.";
+          "That crop did not look like nose leather. Fill the box with the black/pink nose only, then try again.";
         qualityCache.set(key, { passed: false, message });
         setError(message);
         setPhase(PHASE.IDLE);
