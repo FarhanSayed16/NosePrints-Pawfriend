@@ -164,6 +164,31 @@ def leather_center_score(bgr: np.ndarray) -> float:
     return float(max(dark_center_score(gray), pink_leather_score(bgr)))
 
 
+def human_skin_score(bgr: np.ndarray) -> float:
+    """
+    Fraction of *center* pixels that look like human skin (YCrCb ∩ HSV peach).
+    High on human faces/noses; near 0 on black dog leather. Intersection avoids
+    flagging gray/tan muzzle fur that alone matches a loose YCrCb skin range.
+    """
+    if bgr is None or bgr.size == 0:
+        return 0.0
+    h, w = bgr.shape[:2]
+    if h < 16 or w < 16:
+        return 0.0
+    y0, y1 = int(h * 0.20), int(h * 0.80)
+    x0, x1 = int(w * 0.20), int(w * 0.80)
+    center = bgr[y0:y1, x0:x1]
+    if center.size == 0:
+        return 0.0
+    ycrcb = cv2.cvtColor(center, cv2.COLOR_BGR2YCrCb)
+    skin_y = cv2.inRange(ycrcb, (40, 135, 85), (245, 170, 125))
+    hsv = cv2.cvtColor(center, cv2.COLOR_BGR2HSV)
+    # Require real chroma so gray fur does not count as skin
+    skin_h = cv2.inRange(hsv, (0, 45, 70), (22, 155, 245))
+    skin = cv2.bitwise_and(skin_y, skin_h)
+    return float(np.mean(skin > 0))
+
+
 def nose_likeness(bgr: np.ndarray) -> float:
     """
     Lightweight “looks like nose leather” score in [0, 1].
@@ -229,6 +254,7 @@ def assess_nose_crop_heuristics(
     cf = colorfulness(crop_bgr)
     hue_std = hue_spread_degrees(crop_bgr)
     dark_c = leather_center_score(crop_bgr)
+    skin = human_skin_score(crop_bgr)
 
     scores = {
         "aspect_ratio": round(aspect, 4),
@@ -239,6 +265,7 @@ def assess_nose_crop_heuristics(
         "colorfulness": round(cf, 2),
         "hue_spread_deg": round(hue_std, 2),
         "dark_center": round(dark_c, 4),
+        "human_skin": round(skin, 4),
         "crop_width": float(w),
         "crop_height": float(h),
     }
@@ -285,6 +312,17 @@ def assess_nose_crop_heuristics(
             "Tighten the box on the nose — not fur, the body, or the floor."
         )
 
+    # Reject human faces / skin-dominant crops (not a dog nose print)
+    if skin >= settings.NOSE_MAX_HUMAN_SKIN and dark_c < settings.NOSE_MIN_DARK_CENTER + 0.08:
+        issues.append(
+            "This looks like human skin or a human nose, not a dog nose print. "
+            "Photograph only the dog's black/pink nose leather."
+        )
+    elif skin >= settings.NOSE_MAX_HUMAN_SKIN * 1.15 and likeness < settings.NOSE_MIN_LIKENESS + 0.12:
+        issues.append(
+            "Too much skin tone for a dog nose crop. Use only the dog's nose leather."
+        )
+
     if likeness < settings.NOSE_MIN_LIKENESS:
         issues.append(
             f"Does not look like nose leather (score {likeness:.2f} < {settings.NOSE_MIN_LIKENESS:.2f}). "
@@ -304,7 +342,8 @@ def assess_nose_crop_heuristics(
                 "Tighten the box onto the black/pink nose leather only."
             )
 
-    # Client crops: require the re-detect box to occupy a real share (not a tiny corner)
+    # Client crops: re-detect box must be a real share of the canvas (not a speck,
+    # and not a near-full-frame YOLO false hit unless the box is the soft-miss canvas).
     if bbox is not None and pre_cropped:
         x1, y1, x2, y2 = bbox
         area = max(0, x2 - x1) * max(0, y2 - y1)
@@ -313,6 +352,16 @@ def assess_nose_crop_heuristics(
         if frac < settings.NOSE_MIN_BBOX_IN_CROP:
             issues.append(
                 "Nose region is only a tiny part of your crop — enlarge the box onto the nose leather."
+            )
+        full_canvas = x1 <= 2 and y1 <= 2 and x2 >= w - 2 and y2 >= h - 2
+        if (
+            not full_canvas
+            and frac > settings.NOSE_MAX_BBOX_IN_CROP
+            and float(scores.get("nose_likeness", 0)) < settings.NOSE_MIN_LIKENESS + 0.08
+        ):
+            issues.append(
+                "Detected region covers almost the whole crop without looking like nose leather. "
+                "Tighten the box onto the dog's nose only."
             )
 
     return NoseGateResult(passed=len(issues) == 0, issues=issues, scores=scores)
@@ -323,3 +372,120 @@ def encode_bgr_jpeg(bgr: np.ndarray, quality: int = 95) -> bytes:
     if not ok:
         raise ValueError("Could not encode crop JPEG")
     return buf.tobytes()
+
+
+def suggest_nose_bbox_norm(
+    bgr: np.ndarray,
+    *,
+    dog_bbox: tuple[int, int, int, int] | None = None,
+) -> dict[str, float] | None:
+    """
+    When YOLO finds nothing on a phone face/body photo, suggest a starting box
+    on the darkest compact window in the face band (nose leather).
+
+    If dog_bbox is set (Stage-1 COCO dog), search only the upper portion of that
+    box so paws/pavement cannot win. Returns normalized {x1,y1,x2,y2} or None.
+    """
+    if bgr is None or bgr.size == 0:
+        return None
+    h, w = bgr.shape[:2]
+    if min(h, w) < 64:
+        return None
+
+    gray_full = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    # Skip junk gate when we already know there is a dog in-frame
+    if dog_bbox is None:
+        if edge_density(gray_full) >= settings.LOOK_MAX_EDGE_DENSITY * 0.9:
+            return None
+        if (
+            grid_regularity(gray_full) >= settings.LOOK_MAX_GRID_REGULARITY
+            and edge_density(gray_full) > 0.05
+        ):
+            return None
+
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    _hch, sch, vch = cv2.split(hsv)
+    v = vch.astype(np.float32)
+
+    # Default: central face band. With dog box: upper-middle of the dog.
+    if dog_bbox is not None:
+        dx1, dy1, dx2, dy2 = dog_bbox
+        dx1, dy1 = max(0, dx1), max(0, dy1)
+        dx2, dy2 = min(w, dx2), min(h, dy2)
+        bh = max(1, dy2 - dy1)
+        bw = max(1, dx2 - dx1)
+        # Upper 55% of dog box, inset horizontally
+        y0 = dy1 + int(bh * 0.05)
+        y1 = dy1 + int(bh * 0.55)
+        x0 = dx1 + int(bw * 0.15)
+        x1 = dx2 - int(bw * 0.15)
+    else:
+        y0, y1 = int(h * 0.18), int(h * 0.78)
+        x0, x1 = int(w * 0.22), int(w * 0.78)
+    if y1 - y0 < 40 or x1 - x0 < 40:
+        if dog_bbox is not None:
+            dx1, dy1, dx2, dy2 = dog_bbox
+            cx = (dx1 + dx2) / 2 / w
+            cy = (dy1 + 0.35 * (dy2 - dy1)) / h
+            side = 0.14
+            return {
+                "x1": float(np.clip(cx - side / 2, 0.02, 0.85)),
+                "y1": float(np.clip(cy - side / 2, 0.02, 0.85)),
+                "x2": float(np.clip(cx + side / 2, 0.10, 0.98)),
+                "y2": float(np.clip(cy + side / 2, 0.10, 0.98)),
+            }
+        return {"x1": 0.38, "y1": 0.30, "x2": 0.62, "y2": 0.54}
+
+    edge = float(min(h, w))
+    # Edge penalty: whiskers/crevices are high-Canny; smooth leather stays dark
+    edges = cv2.Canny(gray_full, 40, 120)
+    edges_dilated = cv2.dilate(edges, np.ones((3, 3), np.uint8))
+    v_penalized = cv2.add(v, edges_dilated.astype(np.float32) * 0.6)
+
+    # Multi-scale darkest mean window — black leather wins over whiskers / shade
+    win_fracs = (0.10, 0.13, 0.16, 0.20)
+    best: tuple[float, int, int, int] | None = None  # meanV, cx, cy, win
+    for frac in win_fracs:
+        win = max(24, int(round(edge * frac)))
+        if win % 2 == 0:
+            win += 1
+        blur = cv2.boxFilter(v_penalized, -1, (win, win), normalize=True)
+        region = blur[y0:y1, x0:x1]
+        min_val, _, min_loc, _ = cv2.minMaxLoc(region)
+        cx = int(min_loc[0] + x0)
+        cy = int(min_loc[1] + y0)
+        # Prefer truly dark leather; skip mid-gray pavement (threshold on penalized V)
+        if min_val > 110:
+            continue
+        # Soft center bias so ear shadows on the side lose to a true nose
+        center_pen = 1.0 + 0.35 * (((cx / w) - 0.5) ** 2 / 0.08)
+        score = float(min_val) * center_pen
+        if best is None or score < best[0]:
+            best = (score, cx, cy, win)
+
+    if best is None:
+        # Pink noses: look for low-V moderate-S patches instead of failing open
+        pink = ((vch < 150) & (vch > 45) & (sch > 30) & (sch < 160)).astype(np.uint8) * 255
+        pink = cv2.morphologyEx(pink, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        if int(np.count_nonzero(pink[y0:y1, x0:x1])) < 80:
+            return {"x1": 0.38, "y1": 0.30, "x2": 0.62, "y2": 0.54}
+        heat = cv2.GaussianBlur(pink.astype(np.float32), (31, 31), 0)
+        _, _, _, max_loc = cv2.minMaxLoc(heat[y0:y1, x0:x1])
+        cx = int(max_loc[0] + x0)
+        cy = int(max_loc[1] + y0)
+        win = max(24, int(round(edge * 0.14)))
+    else:
+        _score, cx, cy, win = best
+
+    # Box slightly larger than the dark window so leather fills most of it
+    side = win * 1.35
+    side = float(np.clip(side, edge * 0.10, edge * 0.26))
+    x1n = (cx - side / 2) / w
+    x2n = (cx + side / 2) / w
+    y1n = (cy - side / 2) / h
+    y2n = (cy + side / 2) / h
+    x1n = float(np.clip(x1n, 0.02, 0.85))
+    y1n = float(np.clip(y1n, 0.02, 0.85))
+    x2n = float(np.clip(max(x2n, x1n + 0.08), 0.10, 0.98))
+    y2n = float(np.clip(max(y2n, y1n + 0.08), 0.10, 0.98))
+    return {"x1": x1n, "y1": y1n, "x2": x2n, "y2": y2n}

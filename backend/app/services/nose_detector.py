@@ -14,6 +14,7 @@ import numpy as np
 import onnxruntime as ort
 
 from app.config import settings
+from app.services.image_io import decode_bgr, map_bbox_from_rotated, rotate_bgr
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,8 @@ class DetectionResult:
     crop: np.ndarray | None
     bbox: tuple[int, int, int, int] | None
     confidence: float
+    dog_bbox: tuple[int, int, int, int] | None = None
+    dog_confidence: float = 0.0
 
 
 def letterbox(
@@ -57,8 +60,9 @@ def _to_predictions(raw: np.ndarray) -> np.ndarray:
     pred = raw[0] if raw.ndim == 3 else raw
     if pred.ndim != 2:
         raise ValueError(f"Unexpected YOLO output shape: {raw.shape}")
-    # Channels-first if the small dimension is 4+nc (5 for a single class)
-    if pred.shape[0] <= 16 and pred.shape[1] > pred.shape[0]:
+    # Ultralytics export is channels-first: [4+nc, anchors] e.g. 5 (nose) or 84 (COCO).
+    # Transpose to [anchors, 4+nc] whenever the short axis looks like channels.
+    if pred.shape[0] < pred.shape[1] and pred.shape[0] <= 128:
         pred = pred.T
     return pred.astype(np.float32)
 
@@ -99,14 +103,47 @@ def decode_yolov8(
     conf_threshold: float,
     iou_threshold: float = 0.45,
 ) -> tuple[tuple[int, int, int, int] | None, float]:
-    """Return best (x1,y1,x2,y2) in original image pixels, plus confidence."""
+    """Return best box for single-class (or max-class) YOLO — nose detector."""
+    return decode_yolov8_multiclass(
+        output,
+        orig_w=orig_w,
+        orig_h=orig_h,
+        scale=scale,
+        pad=pad,
+        conf_threshold=conf_threshold,
+        iou_threshold=iou_threshold,
+        class_id=None,
+    )
+
+
+def decode_yolov8_multiclass(
+    output: np.ndarray,
+    *,
+    orig_w: int,
+    orig_h: int,
+    scale: float,
+    pad: tuple[float, float],
+    conf_threshold: float,
+    iou_threshold: float = 0.45,
+    class_id: int | None = None,
+) -> tuple[tuple[int, int, int, int] | None, float]:
+    """
+    Return best (x1,y1,x2,y2) in original pixels.
+
+    class_id: if set (e.g. COCO dog=16), only that class; else max over classes.
+    """
     pred = _to_predictions(output)
     if pred.shape[1] < 5:
         raise ValueError(f"YOLO prediction width {pred.shape[1]} < 5")
 
     cx, cy, bw, bh = pred[:, 0], pred[:, 1], pred[:, 2], pred[:, 3]
     class_scores = pred[:, 4:]
-    conf = class_scores.max(axis=1)
+    if class_id is not None:
+        if class_id >= class_scores.shape[1]:
+            return None, 0.0
+        conf = class_scores[:, class_id]
+    else:
+        conf = class_scores.max(axis=1)
     mask = conf >= conf_threshold
     if not np.any(mask):
         return None, 0.0
@@ -122,10 +159,8 @@ def decode_yolov8(
     if not keep:
         return None, 0.0
 
-    best_i = keep[0]  # highest score remains first after NMS on sorted order
-    # Re-pick the actual highest among kept
     best_i = max(keep, key=lambda i: float(conf[i]))
-    box = boxes[best_i]
+    box = boxes[best_i].copy()
     best_conf = float(conf[best_i])
 
     pad_x, pad_y = pad
@@ -241,26 +276,82 @@ class NoseDetector:
             conf_threshold=conf_threshold,
         )
 
-    def detect(self, image_bytes: bytes) -> DetectionResult:
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            raise ValueError("Could not decode image")
+    @staticmethod
+    def _clahe_bgr(img: np.ndarray) -> np.ndarray:
+        """Boost local contrast so dark nose leather stands out on phone shots."""
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.4, tileGridSize=(8, 8))
+        l2 = clahe.apply(l)
+        return cv2.cvtColor(cv2.merge([l2, a, b]), cv2.COLOR_LAB2BGR)
 
-        if not self._loaded:
-            return DetectionResult(original=img, crop=None, bbox=None, confidence=0.0)
-
-        orig_h, orig_w = img.shape[:2]
-        work_img, detect_scale = _downscale_for_detect(img)
-        inv_scale = 1.0 / detect_scale
+    def _infer_zoom_windows(
+        self,
+        work_img: np.ndarray,
+        conf_threshold: float,
+        *,
+        enhance: bool = False,
+    ) -> tuple[tuple[int, int, int, int] | None, float]:
+        """
+        Phone photos often show a whole face/body — YOLO was trained on tighter
+        nose crops. Retry on face/muzzle zoom windows when full-frame misses.
+        """
         work_h, work_w = work_img.shape[:2]
-        primary_conf = settings.DETECTOR_CONF_THRESHOLD
-        retry_conf = settings.DETECTOR_RETRY_CONF_THRESHOLD
-        pad_frac = settings.DETECTOR_CLOSEUP_PAD
+        source = self._clahe_bgr(work_img) if enhance else work_img
+        best_bbox = None
+        best_conf = 0.0
 
+        # (width_frac, height_frac, center_x, center_y) — includes top-down
+        # muzzle bias (cy ≥ 0.55) common on phone stray photos.
+        windows = (
+            (0.70, 0.70, 0.50, 0.42),
+            (0.55, 0.55, 0.50, 0.38),
+            (0.42, 0.42, 0.50, 0.36),
+            (0.55, 0.55, 0.50, 0.50),
+            (0.40, 0.40, 0.50, 0.55),
+            (0.38, 0.38, 0.50, 0.62),  # top-down nose
+            (0.32, 0.32, 0.50, 0.68),
+            (0.45, 0.40, 0.45, 0.58),
+            (0.45, 0.40, 0.55, 0.58),
+        )
+        for wf, hf, cx, cy in windows:
+            bw = max(32, int(round(work_w * wf)))
+            bh = max(32, int(round(work_h * hf)))
+            x1 = int(round(cx * work_w - bw / 2))
+            y1 = int(round(cy * work_h - bh / 2))
+            x1 = max(0, min(x1, work_w - bw))
+            y1 = max(0, min(y1, work_h - bh))
+            x2, y2 = x1 + bw, y1 + bh
+            tile = source[y1:y2, x1:x2]
+            if tile.size == 0:
+                continue
+            bbox_t, conf_t = self._infer(tile, conf_threshold)
+            if bbox_t is None:
+                continue
+            mapped = (
+                bbox_t[0] + x1,
+                bbox_t[1] + y1,
+                bbox_t[2] + x1,
+                bbox_t[3] + y1,
+            )
+            if conf_t > best_conf:
+                best_conf = conf_t
+                best_bbox = mapped
+        return best_bbox, best_conf
+
+    def _detect_on_work(
+        self,
+        work_img: np.ndarray,
+        *,
+        primary_conf: float,
+        retry_conf: float,
+        pad_frac: float,
+        allow_zoom: bool = True,
+    ) -> tuple[tuple[int, int, int, int] | None, float]:
+        """Run full-frame / pad / retry / zoom stack on one orientation."""
+        work_h, work_w = work_img.shape[:2]
         bbox, conf = self._infer(work_img, primary_conf)
 
-        # YOLO often misses noses that already fill the frame. Pad and retry.
         if bbox is None and pad_frac > 0:
             ph = max(1, int(round(work_h * pad_frac)))
             pw = max(1, int(round(work_w * pad_frac)))
@@ -275,12 +366,149 @@ class NoseDetector:
         if bbox is None and retry_conf < primary_conf:
             bbox, conf = self._infer(work_img, retry_conf)
 
+        if bbox is None and allow_zoom:
+            zoom_bbox, zoom_conf = self._infer_zoom_windows(work_img, retry_conf)
+            if zoom_bbox is not None:
+                bbox, conf = zoom_bbox, zoom_conf
+            else:
+                loose = min(retry_conf, 0.10)
+                zoom_bbox, zoom_conf = self._infer_zoom_windows(work_img, loose)
+                if zoom_bbox is not None:
+                    bbox, conf = zoom_bbox, zoom_conf
+                else:
+                    zoom_bbox, zoom_conf = self._infer_zoom_windows(
+                        work_img, loose, enhance=True
+                    )
+                    if zoom_bbox is not None:
+                        bbox, conf = zoom_bbox, zoom_conf
+        return bbox, conf
+
+    def _run_nose_search(
+        self,
+        work_img: np.ndarray,
+        *,
+        primary_conf: float,
+        retry_conf: float,
+        pad_frac: float,
+        accept_conf: float,
+    ) -> tuple[tuple[int, int, int, int] | None, float]:
+        """Full nose search including orientation retries on one canvas."""
+        bbox, conf = self._detect_on_work(
+            work_img,
+            primary_conf=primary_conf,
+            retry_conf=retry_conf,
+            pad_frac=pad_frac,
+            allow_zoom=True,
+        )
+        if bbox is not None and float(conf) >= accept_conf:
+            return bbox, conf
+
+        best_bbox, best_conf = bbox, conf
+        for angle in (90, 180, 270):
+            rotated = rotate_bgr(work_img, angle)
+            rb, rc = self._detect_on_work(
+                rotated,
+                primary_conf=primary_conf,
+                retry_conf=retry_conf,
+                pad_frac=pad_frac,
+                allow_zoom=True,
+            )
+            if rb is None or rc <= best_conf:
+                continue
+            mapped = map_bbox_from_rotated(
+                rb,
+                angle_cw=angle,
+                orig_w=work_img.shape[1],
+                orig_h=work_img.shape[0],
+            )
+            if mapped is not None:
+                best_bbox, best_conf = mapped, rc
+                logger.info("Nose found via %d° rotation conf=%.3f", angle, rc)
+        return best_bbox, best_conf
+
+    def detect(self, image_bytes: bytes) -> DetectionResult:
+        img = decode_bgr(image_bytes)
+
+        if not self._loaded:
+            return DetectionResult(original=img, crop=None, bbox=None, confidence=0.0)
+
+        orig_h, orig_w = img.shape[:2]
+        work_img, detect_scale = _downscale_for_detect(img)
+        inv_scale = 1.0 / detect_scale
+        primary_conf = settings.DETECTOR_CONF_THRESHOLD
+        retry_conf = settings.DETECTOR_RETRY_CONF_THRESHOLD
+        pad_frac = settings.DETECTOR_CLOSEUP_PAD
+        accept_conf = settings.DETECTOR_MIN_ACCEPT_CONF
+
+        dog_bbox_orig: tuple[int, int, int, int] | None = None
+        dog_conf = 0.0
+        bbox: tuple[int, int, int, int] | None = None
+        conf = 0.0
+
+        # ── Stage 1: COCO dog → Stage 2 nose on head ROI ─────────────────
+        if settings.DOG_STAGE1_ENABLED:
+            try:
+                from app.services.dog_detector import dog_detector
+
+                if dog_detector.is_loaded:
+                    dog = dog_detector.detect(work_img)
+                    if dog is not None:
+                        wh, ww = work_img.shape[:2]
+                        hx1, hy1, hx2, hy2 = dog_detector.head_roi(dog, wh, ww)
+                        dog_bbox_orig = _scale_bbox(dog.bbox, inv_scale)
+                        dog_conf = float(dog.confidence)
+                        head = work_img[hy1:hy2, hx1:hx2]
+                        if head.size > 0 and min(head.shape[:2]) >= 32:
+                            nb, nc = self._run_nose_search(
+                                head,
+                                primary_conf=primary_conf,
+                                retry_conf=retry_conf,
+                                pad_frac=pad_frac,
+                                accept_conf=accept_conf,
+                            )
+                            if nb is not None:
+                                bbox = (
+                                    nb[0] + hx1,
+                                    nb[1] + hy1,
+                                    nb[2] + hx1,
+                                    nb[3] + hy1,
+                                )
+                                conf = nc
+                                logger.info(
+                                    "Nose via two-stage dog=%.3f nose=%.3f",
+                                    dog_conf,
+                                    conf,
+                                )
+            except Exception as exc:
+                logger.warning("Stage-1 dog detect skipped: %s", exc)
+
+        # ── Fallback: full-frame nose search ONLY if Stage-1 found no dog ─
+        # If a dog head was found but nose YOLO missed, full-frame search
+        # often locks onto paws/shadows — keep the head-scoped result/miss.
+        if (bbox is None or float(conf) < accept_conf) and dog_bbox_orig is None:
+            fb, fc = self._run_nose_search(
+                work_img,
+                primary_conf=primary_conf,
+                retry_conf=retry_conf,
+                pad_frac=pad_frac,
+                accept_conf=accept_conf,
+            )
+            if fb is not None and (bbox is None or fc > conf + 0.02):
+                bbox, conf = fb, fc
+
         if bbox is not None:
             bbox = _scale_bbox(bbox, inv_scale)
 
         if bbox is None:
             logger.info("No nose detected")
-            return DetectionResult(original=img, crop=None, bbox=None, confidence=conf)
+            return DetectionResult(
+                original=img,
+                crop=None,
+                bbox=None,
+                confidence=conf,
+                dog_bbox=dog_bbox_orig,
+                dog_confidence=dog_conf,
+            )
 
         x1, y1, x2, y2 = bbox
         margin_x = int((x2 - x1) * 0.12)
@@ -291,7 +519,14 @@ class NoseDetector:
         cy2 = min(orig_h, y2 + margin_y)
         cropped = img[cy1:cy2, cx1:cx2]
         if cropped.size == 0:
-            return DetectionResult(original=img, crop=None, bbox=None, confidence=conf)
+            return DetectionResult(
+                original=img,
+                crop=None,
+                bbox=None,
+                confidence=conf,
+                dog_bbox=dog_bbox_orig,
+                dog_confidence=dog_conf,
+            )
 
         logger.debug(f"Nose at ({cx1},{cy1})-({cx2},{cy2}) conf={conf:.3f}")
         return DetectionResult(
@@ -299,6 +534,8 @@ class NoseDetector:
             crop=cropped,
             bbox=(cx1, cy1, cx2, cy2),
             confidence=conf,
+            dog_bbox=dog_bbox_orig,
+            dog_confidence=dog_conf,
         )
 
 

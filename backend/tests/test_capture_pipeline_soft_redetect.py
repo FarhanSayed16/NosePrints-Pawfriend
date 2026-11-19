@@ -19,7 +19,11 @@ def _nose_like(size=160):
 
 
 def _pass_heuristics():
-    return NoseGateResult(passed=True, issues=[], scores={"nose_likeness": 0.7})
+    return NoseGateResult(
+        passed=True,
+        issues=[],
+        scores={"nose_likeness": 0.7, "human_skin": 0.05, "dark_center": 0.62},
+    )
 
 
 def test_pre_cropped_yolo_miss_accepts_likeness_canvas():

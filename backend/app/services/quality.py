@@ -80,9 +80,11 @@ def assess_image_quality(
     Backward-compatible helper. Prefer assess_crop_quality once a bbox exists.
     If a bbox is given, sharpness/brightness still run on the crop region.
     """
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if img is None:
+    try:
+        from app.services.image_io import decode_bgr
+
+        img = decode_bgr(image_bytes)
+    except ValueError:
         return QualityCheckResult(
             passed=False,
             sharpness_score=0.0,

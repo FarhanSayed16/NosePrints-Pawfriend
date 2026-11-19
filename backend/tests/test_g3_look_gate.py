@@ -48,6 +48,37 @@ def test_chat_screen_look_soft_warns():
     )
 
 
+def test_real_outdoor_dog_look_does_not_screen_warn():
+    """
+    Regression: pavement + fur used to push horiz_lines≈1.0 and false 'phone screen' warn.
+    Prefer a recent real upload when present; otherwise a synthetic outdoor-like frame.
+    """
+    from pathlib import Path
+
+    import cv2
+    import numpy as np
+
+    upload = Path(__file__).resolve().parents[1] / "uploads" / "match-appearance"
+    candidates = sorted(upload.glob("*.jpg"), key=lambda p: p.stat().st_mtime, reverse=True) if upload.is_dir() else []
+    if candidates:
+        raw = candidates[0].read_bytes()
+    else:
+        # Synthetic: tan “fur” blob on grey pavement (no chat green)
+        img = np.full((480, 640, 3), (150, 150, 150), dtype=np.uint8)
+        cv2.ellipse(img, (320, 260), (140, 110), 0, 0, 360, (40, 120, 180), -1)
+        cv2.circle(img, (280, 220), 18, (20, 40, 40), -1)
+        cv2.circle(img, (360, 220), 18, (20, 40, 40), -1)
+        ok, buf = cv2.imencode(".jpg", img)
+        assert ok
+        raw = buf.tobytes()
+
+    result = assess_look_photo(raw)
+    assert result.ok is True
+    screen_issues = [i for i in result.issues if "phone or laptop screen" in i.lower()]
+    assert screen_issues == [], result.scores
+    assert result.scores.get("screen_ui_score", 1.0) < 0.42
+
+
 def test_tiny_look_hard_rejects():
     # Minimal valid JPEG that decodes tiny — use a 1x1 png via opencv-written jpeg path
     import cv2
