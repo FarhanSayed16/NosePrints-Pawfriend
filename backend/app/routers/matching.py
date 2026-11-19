@@ -42,7 +42,10 @@ async def detect_preview(
       stuck with a useless default center box on a real face/nose photo.
     """
     from app.config import settings
-    from app.services.nose_heuristics import assess_nose_crop_heuristics
+    from app.services.nose_heuristics import (
+        assess_nose_crop_heuristics,
+        suggest_nose_bbox_norm,
+    )
 
     image_bytes = await file.read()
     if not image_bytes:
@@ -58,7 +61,13 @@ async def detect_preview(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     h, w = detection.original.shape[:2]
-    manual_msg = "No clear nose — drag a tight box onto the nose leather yourself."
+    manual_msg = (
+        "Place the box on the black/pink nose leather only — not the eyes or whole face. "
+        "Pinch to resize, then confirm."
+    )
+    assist_msg = (
+        "Suggested starting box — tighten onto the nose leather only, then confirm."
+    )
     adjust_msg = "Suggested box — tighten onto the nose leather, then confirm."
 
     def _norm_bbox(box: tuple[int, int, int, int]) -> dict[str, float]:
@@ -70,15 +79,28 @@ async def detect_preview(
             "y2": y2 / max(h, 1),
         }
 
-    if detection.bbox is None or detection.crop is None:
+    def _heuristic_response(conf: float = 0.0) -> DetectPreviewResponse:
+        hint = suggest_nose_bbox_norm(
+            detection.original,
+            dog_bbox=getattr(detection, "dog_bbox", None),
+        )
+        msg = assist_msg if hint else manual_msg
+        if hint and getattr(detection, "dog_bbox", None) is not None:
+            msg = (
+                "Dog found — suggested nose box on the head. "
+                "Tighten onto the nose leather, then confirm."
+            )
         return DetectPreviewResponse(
             detected=False,
-            confidence=0.0,
+            confidence=round(conf, 4),
             image_width=w,
             image_height=h,
-            bbox=None,
-            message=manual_msg,
+            bbox=hint,
+            message=msg,
         )
+
+    if detection.bbox is None or detection.crop is None:
+        return _heuristic_response(float(detection.confidence or 0.0))
 
     conf = float(detection.confidence)
     x1, y1, x2, y2 = detection.bbox
@@ -86,31 +108,20 @@ async def detect_preview(
     suggest_conf = settings.DETECTOR_PREVIEW_SUGGEST_CONF
     accept_conf = settings.DETECTOR_MIN_ACCEPT_CONF
 
-    # Full-frame false hits (keyboards / rooms) — never suggest
+    # Full-frame false hits — fall back to heuristic assist, not a blank editor
     if frac > settings.NOSE_MAX_BBOX_FRAME_FRACTION:
-        return DetectPreviewResponse(
-            detected=False,
-            confidence=round(conf, 4),
-            image_width=w,
-            image_height=h,
-            bbox=None,
-            message="Auto-detect looked wrong (almost the whole photo). Drag a tight box on the nose leather only.",
+        resp = _heuristic_response(conf)
+        resp.message = (
+            "Auto-detect covered too much of the photo. "
+            "Drag the box onto the nose leather only."
         )
+        return resp
 
     if conf < suggest_conf:
-        return DetectPreviewResponse(
-            detected=False,
-            confidence=round(conf, 4),
-            image_width=w,
-            image_height=h,
-            bbox=None,
-            message=manual_msg,
-        )
+        return _heuristic_response(conf)
 
     suggested = _norm_bbox(detection.bbox)
 
-    # Hard junk on the proposed crop → do not claim detection, but keep box
-    # when conf is usable so the user can tighten it themselves.
     gate = assess_nose_crop_heuristics(
         detection.crop,
         bbox=detection.bbox,
@@ -130,16 +141,16 @@ async def detect_preview(
     )
 
     if hard_junk:
+        # Keep a usable starting box (YOLO or heuristic) — never leave the user stranded
         return DetectPreviewResponse(
             detected=False,
             confidence=round(conf, 4),
             image_width=w,
             image_height=h,
-            bbox=None,
-            message=manual_msg,
+            bbox=suggested,
+            message=adjust_msg,
         )
 
-    # Confident + heuristics OK → “Nose found”
     if conf >= accept_conf and gate.passed:
         return DetectPreviewResponse(
             detected=True,
@@ -150,14 +161,13 @@ async def detect_preview(
             message="Nose found — adjust the box if needed, then confirm.",
         )
 
-    # Uncertain / soft heuristic miss → still hand the user a starting box
     return DetectPreviewResponse(
         detected=False,
         confidence=round(conf, 4),
         image_width=w,
         image_height=h,
         bbox=suggested,
-        message=adjust_msg if conf >= accept_conf else manual_msg,
+        message=adjust_msg if conf >= accept_conf else assist_msg,
     )
 
 

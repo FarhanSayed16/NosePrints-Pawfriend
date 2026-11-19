@@ -19,14 +19,13 @@ from app.services.quality import assess_crop_quality
 
 
 NO_NOSE_DETAIL = {
-    "message": "No dog nose detected in this photo",
-    "issues": ["The camera did not find a nose region"],
+    "message": "No dog nose detected — use a close-up of the nose leather",
+    "issues": ["Could not find a usable nose region in this photo"],
     "suggestions": [
-        "Hold the phone 15–30 cm from the nose",
-        "Align the nose inside the on-screen circle",
+        "Hold the phone 15–30 cm from the black/pink nose",
+        "Fill most of the crop box with nose leather (not the whole face)",
         "Use even lighting and avoid motion blur",
-        "Keep a little muzzle around the nose — do not crop so tight the nose fills the whole photo",
-        "Do not upload keyboards, rooms, or other non-nose photos",
+        "Do not upload bags, keyboards, rooms, human faces, or other non-nose photos",
     ],
 }
 
@@ -44,7 +43,7 @@ HEURISTIC_DETAIL = {
     "message": "This photo does not look like a usable dog nose print",
     "suggestions": [
         "Crop tightly on the black/pink nose leather",
-        "Do not use keyboards, screens, rooms, or whole-body shots as the nose print",
+        "Do not use keyboards, screens, rooms, human faces, or whole-body shots as the nose print",
         "Retake outdoors or under even light, 15–30 cm from the nose",
     ],
 }
@@ -155,10 +154,14 @@ def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> Prepa
         fh, fw = full.shape[:2]
         provisional = assess_nose_crop_heuristics(full, pre_cropped=True)
         likeness = float(provisional.scores.get("nose_likeness", 0.0))
+        skin = float(provisional.scores.get("human_skin", 0.0))
+        dark_c = float(provisional.scores.get("dark_center", 0.0))
         if (
             provisional.passed
             and min(fh, fw) >= 64
             and likeness >= settings.NOSE_SOFT_MISS_MIN_LIKENESS
+            and skin < settings.NOSE_MAX_HUMAN_SKIN
+            and dark_c >= settings.NOSE_MIN_DARK_CENTER
         ):
             detection = DetectionResult(
                 original=full,

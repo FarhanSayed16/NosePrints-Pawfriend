@@ -12,7 +12,12 @@ import numpy as np
 def appearance_vector(image_bytes: bytes) -> np.ndarray | None:
     if not image_bytes:
         return None
-    img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+    try:
+        from app.services.image_io import decode_bgr
+
+        img = decode_bgr(image_bytes)
+    except ValueError:
+        return None
     if img is None or img.size == 0:
         return None
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)

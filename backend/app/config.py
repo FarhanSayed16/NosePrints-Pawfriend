@@ -34,15 +34,22 @@ class Settings(BaseSettings):
 
     # ── ML Models ──
     NOSE_DETECTOR_MODEL_PATH: str = "models/nose_detector.onnx"
+    # Stage-1 COCO dog finder (yolov8n) — crops before Stage-2 nose YOLO
+    DOG_DETECTOR_MODEL_PATH: str = "models/dog_detector_coco.onnx"
+    DOG_STAGE1_ENABLED: bool = True
+    DOG_DETECTOR_CONF: float = 0.25
+    DOG_CROP_PAD: float = 0.08
+    # Keep upper fraction of dog box for head/muzzle (avoids paws)
+    DOG_HEAD_HEIGHT_FRAC: float = 0.62
     EMBEDDING_MODEL_PATH: str = "models/embedding_model.onnx"
     EMBEDDING_DIMENSION: int = 512
-    DETECTOR_CONF_THRESHOLD: float = 0.35
-    DETECTOR_RETRY_CONF_THRESHOLD: float = 0.20
+    DETECTOR_CONF_THRESHOLD: float = 0.32
+    DETECTOR_RETRY_CONF_THRESHOLD: float = 0.15
     DETECTOR_CLOSEUP_PAD: float = 0.30
     # Public accept floor. Preview may still *suggest* boxes slightly below this.
-    DETECTOR_MIN_ACCEPT_CONF: float = 0.32
+    DETECTOR_MIN_ACCEPT_CONF: float = 0.28
     # Show a draggable suggestion even when we will not claim “Nose found”.
-    DETECTOR_PREVIEW_SUGGEST_CONF: float = 0.22
+    DETECTOR_PREVIEW_SUGGEST_CONF: float = 0.15
 
     # ── Matching (from ml/eval_results/embedding/metrics.txt, 17 Aug 2026) ──
     # Cosine vs 6,000-dog gallery. Placeholder 0.85 was far too high for this model.
@@ -76,6 +83,8 @@ class Settings(BaseSettings):
     NOSE_MAX_HUE_SPREAD: float = 48.0
     # Leather center (dark *or* pink/brown) — uniform fur sits ~0.33
     NOSE_MIN_DARK_CENTER: float = 0.40
+    # Reject human-face / skin-heavy crops (dog black leather ≈ 0)
+    NOSE_MAX_HUMAN_SKIN: float = 0.42
     NOSE_MIN_LAPLACIAN: float = 22.0  # blank walls / flat fills
     NOSE_MAX_BBOX_FRAME_FRACTION: float = 0.85
     NOSE_MIN_BBOX_IN_CROP: float = 0.12
@@ -85,9 +94,9 @@ class Settings(BaseSettings):
     NOSE_REDETECT_ON_CROP: bool = True
     # If re-detect fails on a client crop, keep first pass when heuristics pass
     NOSE_REDETECT_SOFT_FALLBACK: bool = True
-    NOSE_REDETECT_SOFT_MIN_LIKENESS: float = 0.36
-    # YOLO miss on pre_cropped: soft-accept when heuristics pass (fabric gates still apply)
-    NOSE_SOFT_MISS_MIN_LIKENESS: float = 0.36
+    NOSE_REDETECT_SOFT_MIN_LIKENESS: float = 0.45
+    # YOLO miss on pre_cropped: soft-accept only on strong leather (blocks human/skin)
+    NOSE_SOFT_MISS_MIN_LIKENESS: float = 0.48
 
     # ── G3 look-photo soft gate (full body / face — not biometric) ──
     LOOK_MAX_EDGE_DENSITY: float = 0.12

@@ -85,6 +85,12 @@ async def lifespan(app: FastAPI):
     _enforce_production_secrets()
 
     nose_detector.load()
+    try:
+        from app.services.dog_detector import dog_detector
+
+        dog_detector.load()
+    except Exception as exc:
+        logger.warning("Dog stage-1 detector not loaded: %s", exc)
     embedding_extractor.load()
     storage_service.init()
 
@@ -172,6 +178,15 @@ def _embedding_mode() -> str:
     return "unavailable"
 
 
+def _dog_detector_loaded() -> bool:
+    try:
+        from app.services.dog_detector import dog_detector
+
+        return bool(dog_detector.is_loaded)
+    except Exception:
+        return False
+
+
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
     """Health check — real DB ping and model file presence."""
@@ -199,6 +214,8 @@ async def health_check():
         ml_models={
             "nose_detector_loaded": nose_detector.is_loaded,
             "nose_detector_file": detector_path.exists(),
+            "dog_detector_loaded": _dog_detector_loaded(),
+            "dog_detector_file": Path(settings.DOG_DETECTOR_MODEL_PATH).exists(),
             "embedding_extractor_loaded": embedding_extractor.is_loaded,
             "embedding_extractor_file": embedding_path.exists(),
             "embedding_mode": _embedding_mode(),
