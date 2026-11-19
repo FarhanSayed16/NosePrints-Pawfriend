@@ -46,9 +46,14 @@ export function blobCacheKey(blob) {
 async function decodeBitmap(blob) {
   if (typeof createImageBitmap === "function") {
     try {
-      return await createImageBitmap(blob);
+      // Honor EXIF Orientation so sideways / upside-down phone photos upright
+      return await createImageBitmap(blob, { imageOrientation: "from-image" });
     } catch {
-      /* HEIC / odd types: fall through to <img> */
+      try {
+        return await createImageBitmap(blob);
+      } catch {
+        /* HEIC / odd types: fall through to <img> */
+      }
     }
   }
   const url = URL.createObjectURL(blob);

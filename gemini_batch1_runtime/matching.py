@@ -1,0 +1,317 @@
+"""
+Matching API routes — identify dogs by nose print scan.
+The core identification flow: scan → match → human review.
+"""
+
+import cv2
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import get_db
+from app.deps import get_current_staff, require_staff_write
+from app.models.database import StaffUser
+from app.services.audit import record_audit
+from app.schemas import DetectPreviewResponse, MatchConfirmation, MatchConfirmResponse, MatchQueueItem, MatchResponse
+from app.services import (
+    confirm_match,
+    embedding_extractor,
+    find_matches,
+    storage_service,
+)
+from app.services.capture_pipeline import prepare_nose_scan
+from app.services.ml_guard import require_embedding_model
+from app.services.nose_detector import nose_detector
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/match", tags=["Matching"])
+
+
+@router.post("/detect-preview", response_model=DetectPreviewResponse)
+async def detect_preview(
+    file: UploadFile = File(..., description="Full dog, face, or close-up photo"),
+):
+    """
+    Suggest a nose box so the user can confirm or adjust the crop.
+
+    Honesty rules:
+    - Never claim “Nose found” on junk / full-frame / low-confidence hits.
+    - Still return a *suggested* bbox when YOLO is unsure so the user is not
+      stuck with a useless default center box on a real face/nose photo.
+    """
+    from app.config import settings
+    from app.services.nose_heuristics import (
+        assess_nose_crop_heuristics,
+        suggest_nose_bbox_norm,
+    )
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if not nose_detector.is_loaded:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Nose detector is not loaded.",
+        )
+    try:
+        detection = nose_detector.detect(image_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    h, w = detection.original.shape[:2]
+    manual_msg = (
+        "Place the box on the black/pink nose leather only — not the eyes or whole face. "
+        "Pinch to resize, then confirm."
+    )
+    assist_msg = (
+        "Suggested starting box — tighten onto the nose leather only, then confirm."
+    )
+    adjust_msg = "Suggested box — tighten onto the nose leather, then confirm."
+
+    def _norm_bbox(box: tuple[int, int, int, int]) -> dict[str, float]:
+        x1, y1, x2, y2 = box
+        return {
+            "x1": x1 / max(w, 1),
+            "y1": y1 / max(h, 1),
+            "x2": x2 / max(w, 1),
+            "y2": y2 / max(h, 1),
+        }
+
+    def _heuristic_response(conf: float = 0.0) -> DetectPreviewResponse:
+        hint = suggest_nose_bbox_norm(
+            detection.original,
+            dog_bbox=getattr(detection, "dog_bbox", None),
+        )
+        msg = assist_msg if hint else manual_msg
+        if hint and getattr(detection, "dog_bbox", None) is not None:
+            msg = (
+                "Dog found — suggested nose box on the head. "
+                "Tighten onto the nose leather, then confirm."
+            )
+        return DetectPreviewResponse(
+            detected=False,
+            confidence=round(conf, 4),
+            image_width=w,
+            image_height=h,
+            bbox=hint,
+            message=msg,
+        )
+
+    if detection.bbox is None or detection.crop is None:
+        return _heuristic_response(float(detection.confidence or 0.0))
+
+    conf = float(detection.confidence)
+    x1, y1, x2, y2 = detection.bbox
+    frac = (max(0, x2 - x1) * max(0, y2 - y1)) / max(1, w * h)
+    suggest_conf = settings.DETECTOR_PREVIEW_SUGGEST_CONF
+    accept_conf = settings.DETECTOR_MIN_ACCEPT_CONF
+
+    # Full-frame false hits — fall back to heuristic assist, not a blank editor
+    if frac > settings.NOSE_MAX_BBOX_FRAME_FRACTION:
+        resp = _heuristic_response(conf)
+        resp.message = (
+            "Auto-detect covered too much of the photo. "
+            "Drag the box onto the nose leather only."
+        )
+        return resp
+
+    if conf < suggest_conf:
+        return _heuristic_response(conf)
+
+    suggested = _norm_bbox(detection.bbox)
+
+    gate = assess_nose_crop_heuristics(
+        detection.crop,
+        bbox=detection.bbox,
+        frame_w=w,
+        frame_h=h,
+        pre_cropped=False,
+    )
+    scores = gate.scores or {}
+    hard_junk = (
+        float(scores.get("edge_density", 0)) > settings.NOSE_MAX_EDGE_DENSITY
+        or (
+            float(scores.get("grid_regularity", 0)) > settings.NOSE_MAX_GRID_REGULARITY
+            and float(scores.get("edge_density", 0)) > 0.06
+        )
+        or float(scores.get("colorfulness", 0)) > settings.NOSE_MAX_COLORFULNESS
+        or float(scores.get("hue_spread_deg", 0)) > settings.NOSE_MAX_HUE_SPREAD
+    )
+
+    if hard_junk:
+        # Keep a usable starting box (YOLO or heuristic) — never leave the user stranded
+        return DetectPreviewResponse(
+            detected=False,
+            confidence=round(conf, 4),
+            image_width=w,
+            image_height=h,
+            bbox=suggested,
+            message=adjust_msg,
+        )
+
+    if conf >= accept_conf and gate.passed:
+        return DetectPreviewResponse(
+            detected=True,
+            confidence=round(conf, 4),
+            image_width=w,
+            image_height=h,
+            bbox=suggested,
+            message="Nose found — adjust the box if needed, then confirm.",
+        )
+
+    return DetectPreviewResponse(
+        detected=False,
+        confidence=round(conf, 4),
+        image_width=w,
+        image_height=h,
+        bbox=suggested,
+        message=adjust_msg if conf >= accept_conf else assist_msg,
+    )
+
+
+@router.post("/identify", response_model=MatchResponse)
+async def identify_dog(
+    file: UploadFile = File(..., description="Nose crop or photo containing a nose"),
+    appearance: UploadFile | None = File(default=None, description="Optional full dog / face photo"),
+    pre_cropped: bool = Query(False),
+    force_appearance: bool = Query(
+        False,
+        description="Override soft look-photo warning for the optional appearance file",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Identify a dog by scanning its nose print.
+
+    Optional `appearance` is stored for staff side-by-side review and a coat-colour
+    hint. It does not replace nose cosine as the identity signal.
+    """
+    from app.services.look_gate import assess_look_photo
+
+    require_embedding_model()
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    scan = prepare_nose_scan(image_bytes, pre_cropped=pre_cropped)
+    embedding = embedding_extractor.extract(scan.crop)
+    quality = scan.quality
+
+    ok, encoded = cv2.imencode(".jpg", scan.crop)
+    crop_bytes = encoded.tobytes() if ok else image_bytes
+
+    query_image_url = await storage_service.upload_image(
+        crop_bytes,
+        folder="match-queries",
+        content_type="image/jpeg",
+    )
+
+    appearance_bytes = None
+    if appearance is not None:
+        appearance_bytes = await appearance.read()
+        if not appearance_bytes:
+            appearance_bytes = None
+    query_appearance_url = None
+    if appearance_bytes:
+        # P1.1: same soft look gate as profile-photo
+        gate = assess_look_photo(appearance_bytes)
+        if not gate.ok:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": gate.issues[0] if gate.issues else "Look photo rejected",
+                    "issues": gate.issues,
+                    "soft_warn": False,
+                    "scores": gate.scores,
+                },
+            )
+        if gate.soft_warn and not force_appearance:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": gate.issues[0] if gate.issues else "Please confirm this is a dog photo",
+                    "issues": gate.issues,
+                    "soft_warn": True,
+                    "scores": gate.scores,
+                    "suggestions": [
+                        "Choose a full-body or face photo of the dog",
+                        "Or tap Use anyway, then search again",
+                    ],
+                },
+            )
+        query_appearance_url = await storage_service.upload_image(
+            appearance_bytes,
+            folder="match-appearance",
+            content_type="image/jpeg",
+        )
+
+    match_result = await find_matches(
+        db=db,
+        query_embedding=embedding,
+        quality_result=quality,
+        query_image_url=query_image_url,
+        query_appearance_url=query_appearance_url,
+        query_appearance_bytes=appearance_bytes,
+    )
+
+    logger.info(
+        f"Identify request: match_found={match_result.match_found}, "
+        f"top_score={match_result.top_score}, "
+        f"candidates={len(match_result.candidates)}, "
+        f"appearance={'yes' if query_appearance_url else 'no'}"
+    )
+
+    return match_result
+
+
+@router.get("/queue", response_model=list[MatchQueueItem])
+async def match_queue(
+    include_reviewed: bool = Query(False),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: StaffUser = Depends(get_current_staff),
+):
+    """Staff match queue. Owner contact is not included until confirm."""
+    from app.services.matcher import list_match_queue
+
+    return await list_match_queue(
+        db,
+        include_reviewed=include_reviewed,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.post("/confirm", response_model=MatchConfirmResponse)
+async def confirm_match_result(
+    data: MatchConfirmation,
+    db: AsyncSession = Depends(get_db),
+    staff: StaffUser = Depends(require_staff_write),
+):
+    """
+    Staff confirms or rejects a match.
+    Owner contact is returned only when confirmed=true.
+    Viewers cannot decide.
+    """
+    try:
+        result = await confirm_match(
+            db=db,
+            match_log_id=data.match_log_id,
+            confirmed=data.confirmed,
+            confirmed_by=staff.id,
+            staff_notes=data.staff_notes,
+        )
+        await record_audit(
+            db,
+            action="match.confirm" if data.confirmed else "match.reject",
+            actor_staff_id=staff.id,
+            resource_type="match_log",
+            resource_id=data.match_log_id,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
