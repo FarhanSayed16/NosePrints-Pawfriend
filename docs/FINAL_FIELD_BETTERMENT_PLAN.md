@@ -1,12 +1,24 @@
 # NosePrints — Final End-to-End Field Betterment Plan
 
-**Status:** AGREED (owner clarification + Gemini review, 19 Nov 2026)  
+**Status:** AGREED (owner clarification + Gemini review, 19 Nov 2026) · **Phase 0–1 implemented; 1.5 scaffolded; 2–3 gated on labels**  
 **Target:** Real dog phone photos succeed ≥ **2 of 3** attempts → Nose crop ready → match/register  
 **Demo:** `https://noseprints.farhanbuilds.in`  
 **Hardware for train:** RTX 4050 6GB  
 
 This is the **single source of truth** for what is wrong and what we execute next.  
 Do not mix keyboard/dark post-fail screenshots into diagnosis.
+
+**Implementation progress**
+
+| Phase | Status |
+|-------|--------|
+| 0 Measure | Done — `phone_eval` seeded + `FAILURE_MAP.md` (dominant: Stage-2 miss / assist) |
+| 1 UX | Done — stale error clear, leather-fill copy, vignette, Tighten pulse, API issues |
+| 1 retest | Checklist — [PHASE1_RETEST_CHECKLIST.md](./PHASE1_RETEST_CHECKLIST.md) |
+| 1.5 Dataset | Scaffold + backups + negatives — owner labels 30–100 leather boxes |
+| 2 Train | Script ready (`scale`/`mosaic`/`hsv`) — run after labels |
+| 2 Promote | `scripts/promote_nose_onnx.py` gates on phone_eval |
+| 3 Polish | [PHASE3_POLISH.md](./PHASE3_POLISH.md) — thresholds frozen until evidence |
 
 ---
 

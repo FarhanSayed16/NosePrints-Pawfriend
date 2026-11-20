@@ -477,15 +477,16 @@ def suggest_nose_bbox_norm(
     else:
         _score, cx, cy, win = best
 
-    # Box slightly larger than the dark window so leather fills most of it
-    side = win * 1.35
-    side = float(np.clip(side, edge * 0.10, edge * 0.26))
+    # Tight assist: smaller than the dark window so leather fills the box
+    # (1.35x previously pulled in fur/whiskers and failed likeness after confirm).
+    side = win * 0.85
+    side = float(np.clip(side, edge * 0.08, edge * 0.18))
     x1n = (cx - side / 2) / w
     x2n = (cx + side / 2) / w
     y1n = (cy - side / 2) / h
     y2n = (cy + side / 2) / h
     x1n = float(np.clip(x1n, 0.02, 0.85))
     y1n = float(np.clip(y1n, 0.02, 0.85))
-    x2n = float(np.clip(max(x2n, x1n + 0.08), 0.10, 0.98))
-    y2n = float(np.clip(max(y2n, y1n + 0.08), 0.10, 0.98))
+    x2n = float(np.clip(max(x2n, x1n + 0.05), 0.10, 0.98))
+    y2n = float(np.clip(max(y2n, y1n + 0.05), 0.10, 0.98))
     return {"x1": x1n, "y1": y1n, "x2": x2n, "y2": y2n}

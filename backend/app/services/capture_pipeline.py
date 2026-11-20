@@ -19,13 +19,15 @@ from app.services.quality import assess_crop_quality
 
 
 NO_NOSE_DETAIL = {
-    "message": "No dog nose detected — use a close-up of the nose leather",
-    "issues": ["Could not find a usable nose region in this photo"],
+    "message": "No dog nose detected — pinch until ONLY wet leather fills the circle, then confirm",
+    "issues": [
+        "Could not find a usable nose region — the crop is likely too wide (fur/muzzle) or too far"
+    ],
     "suggestions": [
-        "Hold the phone 15–30 cm from the black/pink nose",
-        "Fill most of the crop box with nose leather (not the whole face)",
+        "Tap Tighten, then pinch until ONLY the black/pink nose leather fills the circle",
+        "Hold the phone 15–30 cm from the nose for a closer shot",
         "Use even lighting and avoid motion blur",
-        "Do not upload bags, keyboards, rooms, human faces, or other non-nose photos",
+        "Do not confirm whole-face or whole-body crops as the nose print",
     ],
 }
 
@@ -231,11 +233,11 @@ def prepare_nose_scan(image_bytes: bytes, *, pre_cropped: bool = False) -> Prepa
         raise HTTPException(
             status_code=422,
             detail={
-                "message": "Image quality too low for a reliable nose print",
+                "message": "Image quality too low — get closer and fill the circle with ONLY nose leather",
                 "issues": quality.issues,
                 "suggestions": [
-                    "Get closer so the black nose leather fills most of the crop box",
-                    "Hold the phone steady — a zoomed-in body photo will look blurry",
+                    "Tap Tighten / pinch until ONLY the black/pink leather fills the circle",
+                    "Get closer (15–30 cm) — a distant snout crop will look soft",
                     "Use even lighting and avoid shadows on the nose",
                 ],
                 "scores": {

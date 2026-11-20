@@ -62,13 +62,15 @@ async def detect_preview(
 
     h, w = detection.original.shape[:2]
     manual_msg = (
-        "Place the box on the black/pink nose leather only — not the eyes or whole face. "
-        "Pinch to resize, then confirm."
+        "Pinch until ONLY the wet black/pink nose leather fills the circle — "
+        "not the eyes or whole face — then confirm."
     )
     assist_msg = (
-        "Suggested starting box — tighten onto the nose leather only, then confirm."
+        "Suggested starting box — pinch until ONLY the nose leather fills the circle, then confirm."
     )
-    adjust_msg = "Suggested box — tighten onto the nose leather, then confirm."
+    adjust_msg = (
+        "Suggested box — pinch until ONLY the wet nose leather fills the circle, then confirm."
+    )
 
     def _norm_bbox(box: tuple[int, int, int, int]) -> dict[str, float]:
         x1, y1, x2, y2 = box
@@ -88,7 +90,7 @@ async def detect_preview(
         if hint and getattr(detection, "dog_bbox", None) is not None:
             msg = (
                 "Dog found — suggested nose box on the head. "
-                "Tighten onto the nose leather, then confirm."
+                "Pinch until ONLY the wet leather fills the circle, then confirm."
             )
         return DetectPreviewResponse(
             detected=False,
@@ -113,7 +115,7 @@ async def detect_preview(
         resp = _heuristic_response(conf)
         resp.message = (
             "Auto-detect covered too much of the photo. "
-            "Drag the box onto the nose leather only."
+            "Pinch until ONLY the wet nose leather fills the circle."
         )
         return resp
 

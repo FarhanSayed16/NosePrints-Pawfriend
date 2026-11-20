@@ -459,6 +459,8 @@ class NoseDetector:
                         dog_conf = float(dog.confidence)
                         head = work_img[hy1:hy2, hx1:hx2]
                         if head.size > 0 and min(head.shape[:2]) >= 32:
+                            # Boost leather contrast on the head ROI before Stage-2 YOLO
+                            head = self._clahe_bgr(head)
                             nb, nc = self._run_nose_search(
                                 head,
                                 primary_conf=primary_conf,
