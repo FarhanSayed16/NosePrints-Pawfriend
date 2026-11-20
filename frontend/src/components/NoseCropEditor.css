@@ -79,6 +79,21 @@
   touch-action: none;
 }
 
+/* Visual-only leather fill guide — does not change the crop box. */
+.crop-leather-guide {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: min(42%, 160px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28);
+  border: 1.5px dashed rgba(255, 255, 255, 0.75);
+}
+
 .crop-box {
   position: absolute;
   border: 2.5px solid #3ec6f0;
@@ -86,6 +101,7 @@
   cursor: move;
   touch-action: none;
   box-sizing: border-box;
+  z-index: 2;
 }
 
 .crop-crosshair {
@@ -233,6 +249,21 @@
 
 .crop-tool:active {
   background: #e8f4fa;
+}
+
+.crop-tool.accent.pulse {
+  animation: tighten-pulse 1.4s ease-in-out infinite;
+  box-shadow: 0 0 0 2px rgba(27, 140, 190, 0.35);
+}
+
+@keyframes tighten-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
 }
 
 .crop-tool.accent {

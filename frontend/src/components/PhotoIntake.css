@@ -60,6 +60,17 @@
   color: #d4533c;
 }
 
+.intake-reject-hint {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: #f7fafc;
+  border: 1px solid rgba(27, 140, 190, 0.18);
+  color: #3a5260;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .intake-inline-status {
   margin: 0 0 0.75rem;
   padding: 0.55rem 0.85rem;

@@ -21,6 +21,7 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
   const [tab, setTab] = useState("camera");
   const [phase, setPhase] = useState(PHASE.IDLE);
   const [error, setError] = useState(null);
+  const [rejectFlash, setRejectFlash] = useState(null);
   const [cropSrc, setCropSrc] = useState(null);
   const [cropBox, setCropBox] = useState(null);
   const [cropMsg, setCropMsg] = useState("");
@@ -29,6 +30,34 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
   const [inlineStatus, setInlineStatus] = useState("");
   const pendingUrlsRef = useRef([]);
   const lastDetectRef = useRef(null); // { key, bbox, message }
+  const rejectTimerRef = useRef(null);
+
+  const clearIntakeError = () => {
+    setError(null);
+    setRejectFlash(null);
+    if (rejectTimerRef.current) {
+      clearTimeout(rejectTimerRef.current);
+      rejectTimerRef.current = null;
+    }
+  };
+
+  const showRejectOnce = (message) => {
+    // Never leave a sticky red banner on the idle camera (confused field screenshots).
+    // Soft hint only — clears when user Flip/shutter/tab or starts a new crop.
+    if (rejectTimerRef.current) clearTimeout(rejectTimerRef.current);
+    setError(null);
+    setRejectFlash(message);
+    rejectTimerRef.current = setTimeout(() => {
+      setRejectFlash(null);
+      rejectTimerRef.current = null;
+    }, 20000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (rejectTimerRef.current) clearTimeout(rejectTimerRef.current);
+    };
+  }, []);
 
   const maxPhotos = mode === "multi" ? 5 : 1;
   const minPhotos = mode === "multi" ? 3 : 1;
@@ -93,7 +122,7 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
       if (qualityCache.has(key)) {
         const cached = qualityCache.get(key);
         if (!cached.passed) {
-          setError(cached.message);
+          showRejectOnce(cached.message);
           setPhase(PHASE.IDLE);
           setInlineStatus("");
           return;
@@ -103,12 +132,14 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
       }
       const res = await checkImageQuality(blob, { preCropped: true });
       if (!res.data?.passed) {
-        const issues = res.data?.issues || [];
+        const issues = Array.isArray(res.data?.issues)
+          ? res.data.issues.filter((x) => typeof x === "string" && x.trim())
+          : [];
         const message =
           issues[0] ||
-          "That crop did not look like nose leather. Fill the box with the black/pink nose only, then try again.";
+          "That crop did not look like nose leather. Pinch until ONLY the wet black/pink leather fills the circle, then try again.";
         qualityCache.set(key, { passed: false, message });
-        setError(message);
+        showRejectOnce(message);
         setPhase(PHASE.IDLE);
         setInlineStatus("");
         return;
@@ -116,14 +147,15 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
       qualityCache.set(key, { passed: true, message: "" });
       addBlob(blob);
     } catch (err) {
-      setError(formatCaptureError(err, formatApiError(err, "Could not verify this nose crop.")));
+      showRejectOnce(formatCaptureError(err, formatApiError(err, "Could not verify this nose crop.")));
       setPhase(PHASE.IDLE);
       setInlineStatus("");
     }
   };
 
   const openCrop = async (file) => {
-    setError(null);
+    clearIntakeError();
+    setRejectFlash(null);
     setInlineStatus("");
     setPhase(PHASE.PREPARING);
     const thumb = URL.createObjectURL(file);
@@ -162,7 +194,7 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
     let bbox = cachedDetect?.bbox ?? null;
     let message =
       cachedDetect?.message ||
-      "Drag the box onto the nose leather — not the eyes or the whole head.";
+      "Pinch until ONLY the wet black/pink nose leather fills the circle — not eyes or the whole head.";
 
     if (detectRes) {
       try {
@@ -171,18 +203,20 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
         if (detectRes.data.detected) {
           message =
             detectRes.data.message ||
-            "Nose found — adjust the box if needed, then confirm.";
+            "Nose found — pinch until ONLY leather fills the circle, then confirm.";
         } else {
           message =
             detectRes.data.message ||
-            "No clear nose — drag a tight box onto the nose leather yourself.";
+            "No clear nose — pinch a tight box until ONLY the wet leather fills the circle.";
         }
         lastDetectRef.current = { key: fileKey, bbox, message };
       } catch {
-        message = "Auto-detect did not respond — drag the box onto the nose yourself.";
+        message =
+          "Auto-detect did not respond — pinch until ONLY the nose leather fills the circle.";
       }
     } else if (!cachedDetect) {
-      message = "Auto-detect did not respond — drag the box onto the nose yourself.";
+      message =
+        "Auto-detect did not respond — pinch until ONLY the nose leather fills the circle.";
     }
 
     setCropSrc(url);
@@ -211,6 +245,8 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
     if (cropSrc) URL.revokeObjectURL(cropSrc);
     setCropSrc(null);
     setCropBox(null);
+    clearIntakeError();
+    setRejectFlash(null);
     setPhase(PHASE.IDLE);
   };
 
@@ -230,7 +266,10 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
             type="button"
             className={tab === "camera" ? "active" : ""}
             disabled={heavyBusy || validating}
-            onClick={() => setTab("camera")}
+            onClick={() => {
+              clearIntakeError();
+              setTab("camera");
+            }}
           >
             <Icon name="camera" size={16} /> Camera
           </button>
@@ -238,7 +277,10 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
             type="button"
             className={tab === "gallery" ? "active" : ""}
             disabled={heavyBusy || validating}
-            onClick={() => setTab("gallery")}
+            onClick={() => {
+              clearIntakeError();
+              setTab("gallery");
+            }}
           >
             <Icon name="clipboard" size={16} /> Gallery
           </button>
@@ -250,6 +292,12 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
           <Icon name="alertCircle" size={18} />
           <span>{error}</span>
         </div>
+      )}
+
+      {!error && rejectFlash && phase === PHASE.IDLE && (
+        <p className="intake-reject-hint" role="status">
+          {rejectFlash}
+        </p>
       )}
 
       {validating && inlineStatus && (
@@ -274,6 +322,7 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
             const file = Array.isArray(blobs) ? blobs[0] : blobs;
             if (file) openCrop(file);
           }}
+          onUserEngage={clearIntakeError}
           mode="single"
           showFilePicker={false}
           autoStart
@@ -283,8 +332,8 @@ export default function PhotoIntake({ onCapture, mode = "single", onCroppingChan
       {phase === PHASE.IDLE && tab === "gallery" && (
         <div className="upload-pane glass-card">
           <p>
-            Pick a close-up of the nose. Drag a <strong>tight box</strong> on the nose leather —
-            not the eyes, whole head, keyboard, or screen.
+            Pick a nose photo. Pinch until <strong>ONLY the wet black/pink leather</strong> fills
+            the circle — not eyes, muzzle, or whole head.
           </p>
           <div className="upload-actions">
             <label className={`btn btn-primary ${heavyBusy || validating ? "disabled" : ""}`}>
