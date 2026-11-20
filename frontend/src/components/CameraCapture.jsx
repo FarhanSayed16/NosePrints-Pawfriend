@@ -40,11 +40,11 @@ const BRIGHTNESS_MAX = 210;
 
 function hintFromStats(stats) {
   // Blur/brightness only — never claim a nose was found (server checks after crop).
-  if (!stats) return "Fill the circle with the nose leather, then tap shutter";
+  if (!stats) return "Fill the circle with ONLY wet nose leather, then tap shutter";
   if (stats.brightness < BRIGHTNESS_MIN) return "Too dark — add light on the nose";
   if (stats.brightness > BRIGHTNESS_MAX) return "Too bright — reduce glare on the nose";
   if (stats.sharpness < SHARPNESS_OK) return "Hold steady — image is blurry";
-  return "Focus OK — fill the circle with the nose (not fur or body), then tap shutter";
+  return "Focus OK — fill the circle with ONLY the nose leather (not fur or body), then tap shutter";
 }
 
 export default function CameraCapture({
@@ -52,11 +52,15 @@ export default function CameraCapture({
   mode = "single",
   showFilePicker = true,
   autoStart = false,
+  onReady = null,
+  onUserEngage = null,
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const onCaptureRef = useRef(onCapture);
+  const onReadyRef = useRef(onReady);
+  const onUserEngageRef = useRef(onUserEngage);
   const capturingRef = useRef(false);
 
   const [isActive, setIsActive] = useState(false);
@@ -72,6 +76,14 @@ export default function CameraCapture({
   useEffect(() => {
     onCaptureRef.current = onCapture;
   }, [onCapture]);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
+  useEffect(() => {
+    onUserEngageRef.current = onUserEngage;
+  }, [onUserEngage]);
 
   const startCamera = useCallback(async () => {
     try {
@@ -141,11 +153,13 @@ export default function CameraCapture({
     };
     if (video.readyState >= 1) play();
     video.addEventListener("loadedmetadata", play);
+    onReadyRef.current?.();
     return () => video.removeEventListener("loadedmetadata", play);
   }, [isActive]);
 
   const captureFrame = useCallback(() => {
     if (!videoRef.current || !canvasRef.current || capturingRef.current) return;
+    onUserEngageRef.current?.();
     capturingRef.current = true;
 
     const video = videoRef.current;
@@ -180,6 +194,7 @@ export default function CameraCapture({
   }, [mode, maxPhotos, stopCamera]);
 
   const toggleCamera = () => {
+    onUserEngageRef.current?.();
     setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
   };
 

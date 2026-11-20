@@ -34,6 +34,9 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
   boxRef.current = box;
 
   const found = Boolean(message && /nose found/i.test(message));
+  const boxFrac =
+    Math.max(0, box.x2 - box.x1) * Math.max(0, box.y2 - box.y1);
+  const needsTighten = boxFrac > 0.12;
 
   useEffect(() => {
     setBox(initialBox || defaultBox());
@@ -176,9 +179,13 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
       const fracW = sw / img.naturalWidth;
       const fracH = sh / img.naturalHeight;
       if (Math.min(sw, sh) < MIN_PX_SOFT) {
-        setWarn("Box is small — enlarge so the nose leather fills most of it.");
+        setWarn("Box is small — enlarge so the wet nose leather fills the circle.");
       } else if (fracW > 0.42 || fracH > 0.42) {
-        setWarn("Still too wide — tighten onto the black/pink nose only (not eyes or muzzle).");
+        setWarn(
+          "Still too wide — tap Tighten, then pinch until ONLY black/pink leather fills the circle.",
+        );
+      } else if (fracW > 0.28 || fracH > 0.28) {
+        setWarn("Tighten until ONLY the wet nose leather fills the circle (not fur or muzzle).");
       } else {
         setWarn("");
       }
@@ -188,6 +195,15 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
 
   const confirm = async () => {
     if (confirming) return;
+    const fracW = Math.max(0, box.x2 - box.x1);
+    const fracH = Math.max(0, box.y2 - box.y1);
+    // Soft block: loose snout boxes always fail likeness — force Tighten first.
+    if (fracW > 0.34 || fracH > 0.34 || fracW * fracH > 0.12) {
+      setWarn(
+        "Box still too wide — tap Tighten (or pinch) until ONLY the wet nose leather fills the circle, then confirm.",
+      );
+      return;
+    }
     setConfirming(true);
     try {
       const img = imgRef.current;
@@ -226,8 +242,11 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
   return (
     <div className="crop-editor">
       <div className={`crop-banner ${found ? "ok" : "assist"}`}>
-        <strong>{found ? "Nose found — fine-tune if needed" : "Frame the nose leather"}</strong>
-        <span>{message || "Drag the box onto the black/pink nose only — not eyes or the whole head."}</span>
+        <strong>{found ? "Nose found — tighten leather into the circle" : "Frame the nose leather"}</strong>
+        <span>
+          {message ||
+            "Pinch until ONLY the wet black/pink nose leather fills the circle, then confirm."}
+        </span>
       </div>
 
       <div className="crop-stage">
@@ -243,6 +262,7 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
           <div className="crop-dim" style={dim.bottom} onPointerDown={(e) => beginDrag(e, "move")} />
           <div className="crop-dim" style={dim.left} onPointerDown={(e) => beginDrag(e, "move")} />
           <div className="crop-dim" style={dim.right} onPointerDown={(e) => beginDrag(e, "move")} />
+          <div className="crop-leather-guide" aria-hidden />
           <div className="crop-box" style={style} onPointerDown={(e) => beginDrag(e, "move")}>
             <span className="crop-crosshair" aria-hidden />
             {CORNER_HANDLES.map((h) => (
@@ -269,7 +289,12 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
             <button className="crop-tool" type="button" onClick={() => scaleBox(1.2)} title="Larger">
               +
             </button>
-            <button className="crop-tool accent" type="button" onClick={() => scaleBox(0.68)}>
+            <button
+              className={`crop-tool accent${needsTighten ? " pulse" : ""}`}
+              type="button"
+              onClick={() => scaleBox(0.68)}
+              title="Shrink box onto nose leather"
+            >
               Tighten
             </button>
             <button
@@ -305,7 +330,10 @@ export default function NoseCropEditor({ imageUrl, initialBox, message, onConfir
       </div>
 
       {warn && <p className="crop-warn">{warn}</p>}
-      <p className="crop-hint">Drag the box or pinch with two fingers. Fill it with nose leather only.</p>
+      <p className="crop-hint">
+        Drag the box or pinch with two fingers. Pinch until ONLY the wet nose leather fills the
+        circle, then confirm.
+      </p>
 
       <div className="crop-actions">
         <button className="btn btn-outline" type="button" onClick={onCancel} disabled={confirming}>
